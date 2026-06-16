@@ -44,5 +44,5 @@ python src/main.py
 ```
 
 ## 👥 Equipo
-- [Tu nombre] — Desarrollo
-- [Nombre compañero] — Google Forms / integración
+- [Edgardo Barboza] — Desarrollo
+- [Maximo Roman] — Google Forms / integración
