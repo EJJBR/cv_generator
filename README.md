@@ -15,13 +15,21 @@ y genera los CVs en PDF automáticamente.
 
 ## 🔄 Flujo general
 
-    [Periodo abierto - primeras 3 semanas del ciclo]
+    [Periodo abierto - primeras 3 semanas del ciclo (ejemplo)]
     Docentes llenan Google Forms con correo institucional
             ↓
     [Periodo cerrado]
     Personal descarga Excel + carpeta de fotos desde Drive
+    y los ubica en cualquier lugar de su PC (Descargas, Escritorio, USB, etc.)
             ↓
-    App genera PDFs automáticamente
+    En la app selecciona:
+        1. El archivo Excel descargado
+        2. La carpeta de fotos descargada
+            ↓
+    App conecta cada registro con su foto por nombre del docente
+    Si no encuentra una foto → alerta + selección manual
+            ↓
+    App genera todos los PDFs automáticamente
             ↓
     Personal limpia el Sheets manualmente para el siguiente ciclo
 
