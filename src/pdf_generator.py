@@ -1,247 +1,211 @@
 """
 pdf_generator.py
-Genera el CV en PDF con el diseño de dos columnas:
-- Izquierda: azul oscuro con foto circular y datos de contacto
-- Derecha: blanca con logo, formación, trayectoria y experiencia
+Genera el CV en PDF utilizando Platypus (ReportLab).
+Fondo gestionado por callback de página para evitar errores de desbordamiento (LayoutError).
 """
 
 import os
 import io
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
-from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Flowable
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from PIL import Image as PILImage
 
+# ── Paleta de Colores (Armonía Guinda Institucional) ────────────────────
+GUINDA_FACULTAD = colors.HexColor("#4B0002")
+DORADO_LABEL = colors.HexColor("#D4AF37")
+BLANCO = colors.white
+GRIS_TEXTO = colors.HexColor("#2C2C2C")
 
-# ── Colores ─────────────────────────────────────────────────────────────────
-AZUL_OSCURO = colors.HexColor("#1B3A6B")
-AZUL_TITULO = colors.HexColor("#2B5DA1")
-BLANCO      = colors.white
-GRIS_TEXTO  = colors.HexColor("#333333")
-AZUL_LABEL  = colors.HexColor("#7FB3E8")
-
-# ── Medidas ──────────────────────────────────────────────────────────────────
-W, H       = A4                  # 595 x 842 pts
-COL_IZQ    = W * 0.36            # ancho columna izquierda
-MARGEN     = 14                  # margen interno general
-X_DER      = COL_IZQ + MARGEN   # x inicio columna derecha
-ANCHO_DER  = W - COL_IZQ - MARGEN * 2
+# ── Dimensiones del Grid ─────────────────────────────────────────────────────
+W, H = A4
+ANCHO_COL_IZQ = W * 0.35
+ANCHO_COL_DER = W * 0.65
+PADDING_DER = 24
+ANCHO_LINEA = ANCHO_COL_DER - (PADDING_DER * 2)
 
 
-# ── Utilidades de texto ──────────────────────────────────────────────────────
-def _wrap_text(c, texto, x, y, ancho, fuente, tamanio, color, interlinea=13):
-    """Dibuja texto con salto de línea automático. Retorna Y final."""
-    from reportlab.pdfbase.pdfmetrics import stringWidth
-    c.setFillColor(color)
-    c.setFont(fuente, tamanio)
-    palabras = texto.split()
-    linea = ""
-    for palabra in palabras:
-        prueba = (linea + " " + palabra).strip()
-        if stringWidth(prueba, fuente, tamanio) <= ancho:
-            linea = prueba
-        else:
-            if linea:
-                c.drawString(x, y, linea)
-                y -= interlinea
-            linea = palabra
-    if linea:
-        c.drawString(x, y, linea)
-        y -= interlinea
-    return y
+# ── Callbacks de Fondo (Evita usar rowHeights=[H] que rompe el layout) ───────
+def dibujar_fondos_cv(canvas, doc):
+    """Dibuja las dos columnas de color directamente en la lona base."""
+    canvas.saveState()
+    # Barra izquierda Guinda
+    canvas.setFillColor(GUINDA_FACULTAD)
+    canvas.rect(0, 0, ANCHO_COL_IZQ, H, stroke=0, fill=1)
+    # Cuerpo derecho Blanco
+    canvas.setFillColor(BLANCO)
+    canvas.rect(ANCHO_COL_IZQ, 0, ANCHO_COL_DER, H, stroke=0, fill=1)
+    canvas.restoreState()
 
 
-def _bullets(c, texto, x, y, ancho, color, tamanio=8):
-    """Dibuja lista de bullets. Cada ítem separado por salto de línea."""
-    items = [i.strip() for i in texto.strip().split("\n") if i.strip()]
-    for item in items:
-        y = _wrap_text(c, "•  " + item, x, y, ancho,
-                       "Helvetica", tamanio, color, 12)
-        y -= 2
-    return y
+# ── Componentes Visuales Personalizados (Flowables) ──────────────────────────
+class LineaDivisoria(Flowable):
+    """Equivalente a un <hr> con estilos personalizados."""
+    def __init__(self, ancho, color, grosor=1.5):
+        Flowable.__init__(self)
+        self.ancho = ancho
+        self.color = color
+        self.grosor = grosor
+
+    def draw(self):
+        self.canv.saveState()
+        self.canv.setStrokeColor(self.color)
+        self.canv.setLineWidth(self.grosor)
+        self.canv.line(0, 0, self.ancho, 0)
+        self.canv.restoreState()
 
 
-def _seccion_der(c, titulo, y):
-    """Dibuja título de sección en columna derecha con línea azul."""
-    c.setFillColor(AZUL_TITULO)
-    c.setFont("Helvetica-Bold", 11)
-    c.drawString(X_DER, y, titulo)
-    y -= 5
-    c.setStrokeColor(AZUL_TITULO)
-    c.setLineWidth(0.8)
-    c.line(X_DER, y, X_DER + ANCHO_DER, y)
-    return y - 10
+class FotoCircularFlowable(Flowable):
+    """Encapsula la foto circular para que actúe como un elemento de bloque."""
+    def __init__(self, foto_path, radio, color_borde):
+        Flowable.__init__(self)
+        self.foto_path = foto_path
+        self.radio = radio
+        self.color_borde = color_borde
+        self.width = radio * 2
+        self.height = radio * 2
 
-
-def _seccion_izq(c, titulo, valor, y):
-    """Dibuja label + valor en columna izquierda."""
-    c.setFillColor(AZUL_LABEL)
-    c.setFont("Helvetica-Bold", 8)
-    c.drawString(MARGEN, y, titulo.upper())
-    y -= 12
-    y = _wrap_text(c, valor, MARGEN, y,
-                   COL_IZQ - MARGEN * 2,
-                   "Helvetica", 8, BLANCO, 11)
-    return y - 10
-
-
-# ── Foto circular ────────────────────────────────────────────────────────────
-def _foto_circular(c, foto_path, cx, cy, radio):
-    """Dibuja la foto recortada en círculo."""
-    try:
-        img = PILImage.open(foto_path).convert("RGB")
-        # recorte cuadrado centrado
-        w, h  = img.size
-        lado  = min(w, h)
-        left  = (w - lado) // 2
-        top   = (h - lado) // 2
-        img   = img.crop((left, top, left + lado, top + lado))
-        img   = img.resize((300, 300), PILImage.LANCZOS)
-
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=90)
-        buf.seek(0)
-
-        # clip circular
-        path = c.beginPath()
-        path.circle(cx, cy, radio)
-        c.saveState()
-        c.clipPath(path, stroke=0, fill=0)
-        c.drawImage(ImageReader(buf),
-                    cx - radio, cy - radio,
-                    width=radio * 2, height=radio * 2,
-                    preserveAspectRatio=True, mask="auto")
-        c.restoreState()
-
-    except Exception:
-        _foto_placeholder(c, cx, cy, radio)
-
-    # borde blanco siempre
-    c.setStrokeColor(BLANCO)
-    c.setLineWidth(3)
-    c.circle(cx, cy, radio, stroke=1, fill=0)
-
-
-def _foto_placeholder(c, cx, cy, radio):
-    """Silueta genérica cuando no hay foto."""
-    c.setFillColor(colors.HexColor("#B0C4DE"))
-    c.circle(cx, cy, radio, stroke=0, fill=1)
-    c.setFillColor(colors.HexColor("#778899"))
-    c.circle(cx, cy + radio * 0.35, radio * 0.28, stroke=0, fill=1)
-    path = c.beginPath()
-    path.arc(cx - radio * 0.45, cy - radio * 0.15,
-             cx + radio * 0.45, cy + radio * 0.55,
-             startAng=0, extent=180)
-    path.close()
-    c.drawPath(path, stroke=0, fill=1)
-
-
-# ── Generador principal ──────────────────────────────────────────────────────
-def generar_cv(datos: dict, ruta_salida: str, logo_path: str = None) -> str:
-    """
-    Genera el PDF del CV.
-
-    datos: dict con claves:
-        nombre, correo, escuela, departamento, categoria,
-        formacion, trayectoria, experiencia, foto_path
-
-    ruta_salida: ruta completa del PDF a generar
-    logo_path: ruta al logo de la facultad (assets/logofdcp.png)
-
-    Retorna la ruta del PDF generado.
-    """
-    c = canvas.Canvas(ruta_salida, pagesize=A4)
-
-    # ── Fondos ───────────────────────────────────────────────────────────────
-    c.setFillColor(AZUL_OSCURO)
-    c.rect(0, 0, COL_IZQ, H, stroke=0, fill=1)
-    c.setFillColor(BLANCO)
-    c.rect(COL_IZQ, 0, W - COL_IZQ, H, stroke=0, fill=1)
-
-    # ── Foto ─────────────────────────────────────────────────────────────────
-    foto_cx = COL_IZQ / 2
-    foto_cy = H - 115
-    radio   = 70
-
-    foto_path = datos.get("foto_path")
-    if foto_path and os.path.exists(foto_path):
-        _foto_circular(c, foto_path, foto_cx, foto_cy, radio)
-    else:
-        _foto_placeholder(c, foto_cx, foto_cy, radio)
-        c.setStrokeColor(BLANCO)
-        c.setLineWidth(3)
-        c.circle(foto_cx, foto_cy, radio, stroke=1, fill=0)
-
-    # ── Nombre ───────────────────────────────────────────────────────────────
-    y_nombre = foto_cy - radio - 18
-    nombre   = datos.get("nombre", "").upper()
-    partes   = nombre.split()
-    lineas   = []
-    linea    = []
-    for p in partes:
-        linea.append(p)
-        if len(linea) >= 3:
-            lineas.append(" ".join(linea))
-            linea = []
-    if linea:
-        lineas.append(" ".join(linea))
-
-    c.setFillColor(BLANCO)
-    c.setFont("Helvetica-Bold", 13)
-    for ln in lineas:
-        c.drawCentredString(COL_IZQ / 2, y_nombre, ln)
-        y_nombre -= 17
-
-    # ── Datos columna izquierda ───────────────────────────────────────────────
-    y_izq = y_nombre - 15
-    y_izq = _seccion_izq(c, "Correo institucional",
-                          datos.get("correo", "—"), y_izq)
-    y_izq = _seccion_izq(c, "Escuela Profesional",
-                          datos.get("escuela", "—"), y_izq)
-    y_izq = _seccion_izq(c, "Departamento Académico",
-                          datos.get("departamento", "—"), y_izq)
-    y_izq = _seccion_izq(c, "Categoría / Clase",
-                          datos.get("categoria", "—"), y_izq)
-
-    # ── Logo facultad ─────────────────────────────────────────────────────────
-    y_der = H - 20
-    if logo_path and os.path.exists(logo_path):
+    def draw(self):
+        self.canv.saveState()
+        cx, cy = self.radio, self.radio
         try:
-            c.drawImage(ImageReader(logo_path),
-                        X_DER, H - 85,
-                        width=ANCHO_DER, height=70,
-                        preserveAspectRatio=True, mask="auto")
-            y_der = H - 95
+            if self.foto_path and os.path.exists(self.foto_path):
+                img = PILImage.open(self.foto_path).convert("RGB")
+                lado = min(img.size)
+                left = (img.size[0] - lado) // 2
+                top = (img.size[1] - lado) // 2
+                img = img.crop((left, top, left + lado, top + lado))
+                img = img.resize((300, 300), PILImage.LANCZOS)
+
+                buf = io.BytesIO()
+                img.save(buf, format="JPEG", quality=90)
+                buf.seek(0)
+
+                path = self.canv.beginPath()
+                path.circle(cx, cy, self.radio)
+                self.canv.clipPath(path, stroke=0, fill=0)
+                self.canv.drawImage(ImageReader(buf), 0, 0, width=self.width, height=self.height, preserveAspectRatio=True, mask="auto")
+            else:
+                raise Exception()
         except Exception:
-            y_der = H - 30
+            # Silueta Placeholder segura si no encuentra foto
+            self.canv.setFillColor(colors.HexColor("#A38A53"))
+            self.canv.circle(cx, cy, self.radio, stroke=0, fill=1)
+            self.canv.setFillColor(colors.HexColor("#D4AF37"))
+            self.canv.circle(cx, cy + self.radio * 0.35, self.radio * 0.28, stroke=0, fill=1)
+            path = self.canv.beginPath()
+            path.arc(cx - self.radio * 0.45, cy - self.radio * 0.15, cx + self.radio * 0.45, cy + self.radio * 0.55, startAng=0, extent=180)
+            path.close()
+            self.canv.drawPath(path, stroke=0, fill=1)
+        
+        self.canv.restoreState()
+        self.canv.setStrokeColor(self.color_borde)
+        self.canv.setLineWidth(2.5)
+        self.canv.circle(cx, cy, self.radio, stroke=1, fill=0)
+
+
+class LogoFlowable(Flowable):
+    """Renderiza el logo manteniendo su proporción original de forma segura."""
+    def __init__(self, logo_path, ancho_max, alto_max):
+        Flowable.__init__(self)
+        self.logo_path = logo_path
+        self.ancho_max = ancho_max
+        self.alto_max = alto_max
+        self.width = ancho_max
+        self.height = alto_max
+
+    def draw(self):
+        try:
+            if self.logo_path and os.path.exists(self.logo_path):
+                self.canv.drawImage(ImageReader(self.logo_path), 0, 0, width=self.ancho_max, height=self.alto_max, preserveAspectRatio=True, mask="auto")
+        except Exception:
+            pass
+
+
+# ── Generador Principal ──────────────────────────────────────────────────────
+def generar_cv(datos: dict, ruta_salida: str, logo_path: str = None) -> str:
+    # Definimos el lienzo de la página ocupando el 100% del espacio
+    doc = SimpleDocTemplate(ruta_salida, pagesize=A4, leftMargin=0, rightMargin=0, topMargin=0, bottomMargin=0)
+    
+    styles = getSampleStyleSheet()
+    
+    # Configuramos las fuentes escaladas deseadas
+    style_nombre = ParagraphStyle('Nom', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=15, leading=19, textColor=BLANCO, alignment=1)
+    style_label_izq = ParagraphStyle('Lab', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9.5, leading=12, textColor=DORADO_LABEL)
+    style_valor_izq = ParagraphStyle('Val', parent=styles['Normal'], fontName='Helvetica', fontSize=9.5, leading=14, textColor=BLANCO)
+    
+    style_unmsm = ParagraphStyle('Uni', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=18, leading=22, textColor=GUINDA_FACULTAD)
+    style_facultad = ParagraphStyle('Fac', parent=styles['Normal'], fontName='Helvetica', fontSize=11, leading=14, textColor=GRIS_TEXTO)
+    
+    style_titulo_der = ParagraphStyle('TitDer', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=13, leading=16, textColor=GUINDA_FACULTAD)
+    style_cuerpo = ParagraphStyle('Cue', parent=styles['Normal'], fontName='Helvetica', fontSize=10.5, leading=16, textColor=GRIS_TEXTO, alignment=4)
+    style_bullet = ParagraphStyle('Bul', parent=style_cuerpo, leftIndent=12, firstLineIndent=-12)
+
+    # 📦 Elementos Fluyentes - COLUMNA IZQUIERDA
+    story_izq = [
+        Spacer(1, 35),
+        FotoCircularFlowable(datos.get("foto_path"), 65, DORADO_LABEL),
+        Spacer(1, 20),
+        Paragraph(datos.get("nombre", "").upper(), style_nombre),
+        Spacer(1, 30)
+    ]
+    
+    def agregar_bloque_izq(titulo, valor):
+        story_izq.append(Paragraph(titulo.upper(), style_label_izq))
+        story_izq.append(Spacer(1, 4))
+        story_izq.append(Paragraph(valor if valor else "—", style_valor_izq))
+        story_izq.append(Spacer(1, 18))
+
+    agregar_bloque_izq("Correo institucional", datos.get("correo"))
+    agregar_bloque_izq("Escuela Profesional", datos.get("escuela"))
+    agregar_bloque_izq("Departamento Académico", datos.get("departamento"))
+    agregar_bloque_izq("Categoría / Clase", datos.get("categoria"))
+
+    # 📦 Elementos Fluyentes - COLUMNA DERECHA
+    story_der = [Spacer(1, 25)]
+    
+    if logo_path and os.path.exists(logo_path):
+        story_der.append(LogoFlowable(logo_path, ANCHO_LINEA, 70))
+        story_der.append(Spacer(1, 20))
     else:
-        c.setFillColor(AZUL_OSCURO)
-        c.setFont("Helvetica-Bold", 16)
-        c.drawString(X_DER, y_der - 10, "UNMSM")
-        c.setFont("Helvetica", 9)
-        c.setFillColor(GRIS_TEXTO)
-        c.drawString(X_DER, y_der - 24, "Facultad de Derecho y Ciencia Política")
-        y_der = H - 55
+        story_der.append(Paragraph("UNMSM", style_unmsm))
+        story_der.append(Paragraph("Facultad de Derecho y Ciencia Política", style_facultad))
+        story_der.append(Spacer(1, 25))
 
-    # ── Secciones columna derecha ─────────────────────────────────────────────
-    y_der = _seccion_der(c, "Formación Académica", y_der)
-    formacion = datos.get("formacion", "")
-    if formacion:
-        y_der = _bullets(c, formacion, X_DER, y_der, ANCHO_DER, GRIS_TEXTO)
-    y_der -= 12
+    def agregar_seccion_der(titulo, texto, es_lista=False):
+        if not texto: return
+        story_der.append(Paragraph(titulo, style_titulo_der))
+        story_der.append(Spacer(1, 4))
+        story_der.append(LineaDivisoria(ANCHO_LINEA, GUINDA_FACULTAD, 1.5))
+        story_der.append(Spacer(1, 10))
+        
+        if es_lista:
+            elementos = [e.strip() for e in texto.strip().split("\n") if e.strip()]
+            for el in elementos:
+                story_der.append(Paragraph(f"• &nbsp;{el}", style_bullet))
+                story_der.append(Spacer(1, 5))
+        else:
+            story_der.append(Paragraph(texto, style_cuerpo))
+        story_der.append(Spacer(1, 22))
 
-    y_der = _seccion_der(c, "Trayectoria", y_der)
-    trayectoria = datos.get("trayectoria", "")
-    if trayectoria:
-        y_der = _wrap_text(c, trayectoria, X_DER, y_der, ANCHO_DER,
-                           "Helvetica", 8, GRIS_TEXTO, 12)
-    y_der -= 12
+    agregar_seccion_der("Formación Académica", datos.get("formacion", ""), es_lista=True)
+    agregar_seccion_der("Trayectoria", datos.get("trayectoria", ""))
+    agregar_seccion_der("Experiencia Laboral", datos.get("experiencia", ""), es_lista=True)
 
-    y_der = _seccion_der(c, "Experiencia Laboral", y_der)
-    experiencia = datos.get("experiencia", "")
-    if experiencia:
-        y_der = _bullets(c, experiencia, X_DER, y_der, ANCHO_DER, GRIS_TEXTO)
+    # 🎛️ Estructura Grid de Doble Columna (Sin forzar rowHeights)
+    grid_principal = Table([[story_izq, story_der]], colWidths=[ANCHO_COL_IZQ, ANCHO_COL_DER])
+    grid_principal.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (0, 0), 18),
+        ('RIGHTPADDING', (0, 0), (0, 0), 18),
+        ('LEFTPADDING', (1, 0), (1, 0), PADDING_DER),
+        ('RIGHTPADDING', (1, 0), (1, 0), PADDING_DER),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+    ]))
 
-    c.save()
+    # Compilamos inyectando el fondo a través del parámetro onFirstPage
+    doc.build([grid_principal], onFirstPage=dibujar_fondos_cv)
     return ruta_salida

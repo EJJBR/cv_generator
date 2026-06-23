@@ -11,6 +11,7 @@ import openpyxl
 # Nombres de columnas esperados (ajustar si el Excel tiene nombres diferentes)
 COLUMNAS = {
     "nombre":      "Apellidos y Nombres",
+    "foto_drive":  "Foto",               # ← agregar esta línea (la ignoramos)
     "correo":      "Correo Institucional",
     "escuela":     "Escuela Profesional",
     "departamento":"Departamento Academico",
@@ -18,7 +19,7 @@ COLUMNAS = {
     "formacion1":  "Formación Académica 1",
     "formacion2":  "Formación Académica 2",
     "formacion3":  "Formación Académica 3",
-    "trayectoria": "Treyectora",
+    "trayectoria": "Trayectoria",
     "exp1":        "Experiencia Laboral 1",
     "exp2":        "Experiencia Laboral 2",
     "exp3":        "Experiencia Laboral 3",
