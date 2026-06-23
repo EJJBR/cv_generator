@@ -81,13 +81,44 @@ y genera los CVs en PDF automáticamente.
 
 ## ⚙️ Instalación
 
-    python3 -m venv venv
-    source venv/bin/activate
-    pip install -r requirements.txt
+Linux / macOS (Bash):
+
+```
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+Windows (CMD):
+
+```
+python -m venv venv
+venv\Scripts\activate.bat
+python -m pip install -r requirements.txt
+```
+
+Windows (PowerShell):
+
+```
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+```
+
+Nota: la carpeta `venv/` ya está listada en `.gitignore`. Si por error ya la añadiste al repositorio, quítala del índice antes de volver a subir:
+
+```
+git rm -r --cached venv
+git commit -m "Remove venv from repo"
+```
 
 ## ▶️ Uso
 
-    python src/main.py
+Ejecuta la aplicación con el intérprete del entorno virtual activo:
+
+```
+python src/main.py
+```
 
 ## 👥 Equipo
 - Edgardo Barboza — Desarrollo
