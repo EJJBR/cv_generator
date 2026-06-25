@@ -12,6 +12,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Flowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from PIL import Image as PILImage
+from ui.utils import sanitizar_para_reportlab
 
 # ── Paleta de Colores (Armonía Guinda Institucional) ────────────────────
 GUINDA_FACULTAD = colors.HexColor("#4B0002")
@@ -148,14 +149,14 @@ def generar_cv(datos: dict, ruta_salida: str, logo_path: str = None) -> str:
         Spacer(1, 35),
         FotoCircularFlowable(datos.get("foto_path"), 65, DORADO_LABEL),
         Spacer(1, 20),
-        Paragraph(datos.get("nombre", "").upper(), style_nombre),
+        Paragraph(sanitizar_para_reportlab(datos.get("nombre", "")).upper(), style_nombre),
         Spacer(1, 30)
     ]
     
     def agregar_bloque_izq(titulo, valor):
         story_izq.append(Paragraph(titulo.upper(), style_label_izq))
         story_izq.append(Spacer(1, 4))
-        story_izq.append(Paragraph(valor if valor else "—", style_valor_izq))
+        story_izq.append(Paragraph(sanitizar_para_reportlab(valor) if valor else "—", style_valor_izq))
         story_izq.append(Spacer(1, 18))
 
     agregar_bloque_izq("Correo institucional", datos.get("correo"))
@@ -184,10 +185,10 @@ def generar_cv(datos: dict, ruta_salida: str, logo_path: str = None) -> str:
         if es_lista:
             elementos = [e.strip() for e in texto.strip().split("\n") if e.strip()]
             for el in elementos:
-                story_der.append(Paragraph(f"• &nbsp;{el}", style_bullet))
+                story_der.append(Paragraph(f"• &nbsp;{sanitizar_para_reportlab(el)}", style_bullet))
                 story_der.append(Spacer(1, 5))
         else:
-            story_der.append(Paragraph(texto, style_cuerpo))
+            story_der.append(Paragraph(sanitizar_para_reportlab(texto), style_cuerpo))
         story_der.append(Spacer(1, 22))
 
     agregar_seccion_der("Formación Académica", datos.get("formacion", ""), es_lista=True)
