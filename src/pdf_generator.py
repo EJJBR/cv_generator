@@ -162,7 +162,9 @@ def generar_cv(datos: dict, ruta_salida: str, logo_path: str = None) -> str:
     agregar_bloque_izq("Correo institucional", datos.get("correo"))
     agregar_bloque_izq("Escuela Profesional", datos.get("escuela"))
     agregar_bloque_izq("Departamento Académico", datos.get("departamento"))
+    agregar_bloque_izq("Tipo de docente", datos.get("tipo_docente"))
     agregar_bloque_izq("Categoría / Clase", datos.get("categoria"))
+    agregar_bloque_izq("Clase de docente", datos.get("clase_docente"))
 
     # 📦 Elementos Fluyentes - COLUMNA DERECHA
     story_der = [Spacer(1, 25)]
@@ -192,6 +194,7 @@ def generar_cv(datos: dict, ruta_salida: str, logo_path: str = None) -> str:
         story_der.append(Spacer(1, 22))
 
     agregar_seccion_der("Formación Académica", datos.get("formacion", ""), es_lista=True)
+    agregar_seccion_der("Sobre Investigación", datos.get("investigacion", ""))
     agregar_seccion_der("Trayectoria", datos.get("trayectoria", ""))
     agregar_seccion_der("Experiencia Laboral", datos.get("experiencia", ""), es_lista=True)
 

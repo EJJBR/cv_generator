@@ -5,20 +5,25 @@ en la carpeta descargada de Drive.
 """
 
 import os
+import re
 import openpyxl
 
 
-# Nombres de columnas esperados (ajustar si el Excel tiene nombres diferentes)
+# Nombres de columnas esperados (ajustar si el Excel tiene nombres diferentes).
+# Cada valor puede ser un string o una tupla de alias de encabezado.
 COLUMNAS = {
     "nombre":      "Apellidos y Nombres",
-    "foto_drive":  "Foto",               # ← agregar esta línea (la ignoramos)
-    "correo":      "Correo Institucional",
-    "escuela":     "Escuela Profesional",
+    "foto_drive": ("Foto", "Foto de Perfil (sólo JPG)"),  # Alias para reconocimiento de foto
+    "correo":      ("Correo Institucional", "Correo Institucional (no personal)"),
+    "escuela":     ("Escuela Profesional", "Escuela Profesional o area que pertenece"),
     "departamento":"Departamento Academico",
-    "categoria":   "Categoría / Clase",
+    "tipo_docente":"Tipo de docente",
+    "categoria":   ("Categoría / Clase", "Categoría (de corresponder)"),
+    "clase_docente":"Clase de docente (de corresponder)",
     "formacion1":  "Formación Académica 1",
     "formacion2":  "Formación Académica 2",
     "formacion3":  "Formación Académica 3",
+    "investigacion":"Sobre Investigación",
     "trayectoria": "Trayectoria",
     "exp1":        "Experiencia Laboral 1",
     "exp2":        "Experiencia Laboral 2",
@@ -55,11 +60,15 @@ def _mapear_columnas(encabezados: list) -> dict:
     encabezados_lower = [str(h).strip().lower() if h else "" for h in encabezados]
 
     for campo, nombre_columna in COLUMNAS.items():
-        nombre_lower = nombre_columna.lower()
-        if nombre_lower in encabezados_lower:
-            mapa[campo] = encabezados_lower.index(nombre_lower)
-        else:
-            mapa[campo] = None  # columna no encontrada
+        nombres = nombre_columna if isinstance(nombre_columna, tuple) else (nombre_columna,)
+        indice = None
+        for nombre in nombres:
+            nombre_lower = nombre.lower()
+            if nombre_lower in encabezados_lower:
+                indice = encabezados_lower.index(nombre_lower)
+                break
+
+        mapa[campo] = indice
 
     return mapa
 
@@ -97,23 +106,26 @@ def leer_excel(ruta_excel: str, carpeta_fotos: str) -> tuple[list, list]:
             return ""
 
         datos = {
-            "nombre":      cel("nombre"),
-            "correo":      cel("correo"),
-            "escuela":     cel("escuela"),
-            "departamento":cel("departamento"),
-            "categoria":   cel("categoria"),
+            "nombre":       cel("nombre"),
+            "correo":       cel("correo"),
+            "escuela":      cel("escuela"),
+            "departamento": cel("departamento"),
+            "tipo_docente": cel("tipo_docente"),
+            "categoria":    cel("categoria"),
+            "clase_docente":cel("clase_docente"),
             "formacion": "\n".join(filter(None, [
                 cel("formacion1"),
                 cel("formacion2"),
                 cel("formacion3"),
             ])),
-            "trayectoria": cel("trayectoria"),
+            "investigacion":cel("investigacion"),
+            "trayectoria":  cel("trayectoria"),
             "experiencia": "\n".join(filter(None, [
                 cel("exp1"),
                 cel("exp2"),
                 cel("exp3"),
             ])),
-            "foto_path":   None,
+            "foto_path":    None,
         }
 
         # buscar foto
