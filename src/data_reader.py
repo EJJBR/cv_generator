@@ -6,7 +6,39 @@ en la carpeta descargada de Drive.
 
 import os
 import re
+import unicodedata
 import openpyxl
+
+
+NOISE_TOKENS = {
+    "foto", "fotos", "perfil", "photo", "docente", "carnet", "carne",
+    "jpg", "jpeg", "png", "jfif", "dpi", "copy", "snapseed", "crop",
+    "mg", "dr", "dra", "ing", "lic", "msc", "phd", "prof"
+}
+
+
+def _normalizar_texto(texto: str) -> str:
+    """Quita tildes, normaliza mayúsculas y elimina caracteres no alfanuméricos."""
+    if not texto:
+        return ""
+    texto = unicodedata.normalize("NFKD", str(texto))
+    texto = "".join(ch for ch in texto if not unicodedata.combining(ch))
+    texto = texto.lower()
+    texto = re.sub(r"[^a-z0-9]+", " ", texto)
+    return " ".join(texto.split())
+
+
+def _tokens_importantes(texto: str) -> list[str]:
+    """Devuelve los tokens significativos de un nombre, ignorando ruido y números."""
+    normalizado = _normalizar_texto(texto)
+    tokens = []
+    for token in normalizado.split():
+        if token.isdigit():
+            continue
+        if token in NOISE_TOKENS:
+            continue
+        tokens.append(token)
+    return tokens
 
 
 # Nombres de columnas esperados (ajustar si el Excel tiene nombres diferentes).
@@ -34,19 +66,46 @@ COLUMNAS = {
 def _buscar_foto(nombre_docente: str, carpeta_fotos: str) -> str | None:
     """
     Busca la foto del docente en la carpeta de fotos.
-    El archivo tiene formato: 'Foto - Nombre Apellido.jpg'
-    Retorna la ruta completa si la encuentra, None si no.
+    Acepta nombres con mayúsculas, tildes, abreviaturas, prefijos y apellidos aislados.
     """
     if not os.path.exists(carpeta_fotos):
         return None
 
-    nombre_limpio = nombre_docente.strip().lower()
+    nombre_docente = (nombre_docente or "").strip()
+    if not nombre_docente:
+        return None
+
+    nombre_norm = _normalizar_texto(nombre_docente)
+    nombre_tokens = _tokens_importantes(nombre_docente)
 
     for archivo in os.listdir(carpeta_fotos):
-        nombre_archivo = archivo.lower()
-        # busca el nombre del docente dentro del nombre del archivo
-        if nombre_limpio in nombre_archivo:
-            return os.path.join(carpeta_fotos, archivo)
+        ruta_archivo = os.path.join(carpeta_fotos, archivo)
+        if os.path.isdir(ruta_archivo):
+            continue
+
+        nombre_archivo = os.path.splitext(archivo)[0]
+        archivo_norm = _normalizar_texto(nombre_archivo)
+
+        if nombre_norm and nombre_norm in archivo_norm:
+            return ruta_archivo
+
+        if nombre_norm and archivo_norm in nombre_norm:
+            return ruta_archivo
+
+        archivo_tokens = _tokens_importantes(nombre_archivo)
+        if not nombre_tokens or not archivo_tokens:
+            continue
+
+        if set(nombre_tokens).issubset(set(archivo_tokens)):
+            return ruta_archivo
+
+        overlap = len(set(nombre_tokens) & set(archivo_tokens))
+        if overlap and (overlap >= 2 or overlap / max(len(nombre_tokens), 1) >= 0.6):
+            return ruta_archivo
+
+        apellidos = nombre_tokens[-2:]
+        if len(apellidos) >= 2 and set(apellidos).issubset(set(archivo_tokens)):
+            return ruta_archivo
 
     return None
 
