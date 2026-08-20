@@ -8,7 +8,12 @@ import openpyxl
 import requests
 
 
-EXCEL_PATH = Path(r"C:\Users\LENOVO\Downloads\Hoja de Vida Docente (respuestas) (2)_limpio.xlsx")
+EXCEL_PATH = Path(
+    os.environ.get(
+        "EXCEL_PATH",
+        str(Path(__file__).resolve().parent / "Hoja de Vida Docente (respuestas) (2)_limpio.xlsx"),
+    )
+)
 OUTPUT_DIR = Path(__file__).resolve().parents[1] / "output"
 IMAGES_DIR = OUTPUT_DIR / "imagenes"
 LOGS_DIR = OUTPUT_DIR / "logs"

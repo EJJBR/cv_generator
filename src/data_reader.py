@@ -67,9 +67,10 @@ COLUMNAS = {
 def _buscar_foto(nombre_docente: str, carpeta_fotos: str, id_registro: str | None = None) -> str | None:
     """
     Busca la foto del docente en la carpeta de fotos.
-    Acepta nombres con mayúsculas, tildes, abreviaturas, prefijos y apellidos aislados.
     Si existe un ID, prioriza buscar el archivo con ese prefijo para soportar
-    imágenes descargadas en formato ID_Apellido_Nombre.jpg.
+    imágenes descargadas en formato ID_Apellido_Nombre.jpg. No usa el nombre
+    como alternativa cuando existe un ID, para evitar asignar la foto de otro docente.
+    Sin ID, acepta nombres con mayúsculas, tildes, abreviaturas y apellidos aislados.
     """
     if not os.path.exists(carpeta_fotos):
         return None
@@ -86,6 +87,8 @@ def _buscar_foto(nombre_docente: str, carpeta_fotos: str, id_registro: str | Non
             nombre_base, _ = os.path.splitext(archivo)
             if nombre_base == str(id_registro):
                 return ruta_archivo
+
+        return None
 
     nombre_docente = (nombre_docente or "").strip()
     if not nombre_docente:

@@ -57,10 +57,12 @@ def obtener_posicion_ventana_centrada():
     return x, y, ancho_pantalla, alto_pantalla
 
 
-def nombre_archivo_pdf(nombre: str) -> str:
-    """Genera nombre de archivo PDF seguro a partir del nombre del docente."""
-    limpio = "".join(c for c in nombre if c.isalnum() or c in " _-").strip()
-    return f"CV_{limpio.replace(' ', '_')}.pdf"
+def nombre_archivo_pdf(nombre: str, id_registro: str | None = None) -> str:
+    """Genera un nombre PDF en mayúsculas, con ID opcional al inicio."""
+    limpio = "".join(c for c in str(nombre or "").upper() if c.isalnum() or c in " _-").strip()
+    nombre_archivo = limpio.replace(" ", "_") or "SIN_NOMBRE"
+    prefijo = f"{str(id_registro).strip()}_" if id_registro is not None and str(id_registro).strip() else ""
+    return f"{prefijo}CV_{nombre_archivo}.pdf"
 
 
 def sanitizar_para_reportlab(texto: str) -> str:

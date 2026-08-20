@@ -67,6 +67,7 @@ class FotoCircularFlowable(Flowable):
         self.color_borde = color_borde
         self.width = radio * 2
         self.height = radio * 2
+        self.hAlign = "CENTER"
 
     def draw(self):
         self.canv.saveState()
@@ -144,10 +145,22 @@ def generar_cv(datos: dict, ruta_salida: str, logo_path: str = None) -> str:
     style_cuerpo = ParagraphStyle('Cue', parent=styles['Normal'], fontName='Helvetica', fontSize=10.5, leading=16, textColor=GRIS_TEXTO, alignment=4)
     style_bullet = ParagraphStyle('Bul', parent=style_cuerpo, leftIndent=12, firstLineIndent=-12)
 
+    foto_centrada = Table(
+        [[FotoCircularFlowable(datos.get("foto_path"), 65, DORADO_LABEL)]],
+        colWidths=[ANCHO_COL_IZQ - 36],
+        style=TableStyle([
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]),
+    )
+
     # 📦 Elementos Fluyentes - COLUMNA IZQUIERDA
     story_izq = [
         Spacer(1, 35),
-        FotoCircularFlowable(datos.get("foto_path"), 65, DORADO_LABEL),
+        foto_centrada,
         Spacer(1, 20),
         Paragraph(sanitizar_para_reportlab(datos.get("nombre", "")).upper(), style_nombre),
         Spacer(1, 30)

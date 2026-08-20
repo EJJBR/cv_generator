@@ -4,6 +4,7 @@ UI y lógica del tab de carga masiva.
 """
 
 import os
+import threading
 import tkinter as tk
 from tkinter import filedialog
 import customtkinter as ctk
@@ -131,35 +132,44 @@ class TabMasivo:
             )
 
         if self._modo_generacion == "transformar" or not self._ruta_excel_transformado.get():
-            ok, msg, ruta_transformada = self.controller.transformar_excel(excel)
-            self._log_append(msg)
-            if not ok:
-                self._finalizar_etapa()
-                return
-
-            self._ruta_excel_transformado.set(ruta_transformada)
-            self._ruta_fotos.set(OUTPUT_IMAGENES)
-            self._modo_generacion = "generar"
-
-            ok_descarga, msg_descarga = self.controller.descargar_fotos_excel(ruta_transformada)
-            self._log_append(msg_descarga)
-            if not ok_descarga:
-                self._finalizar_etapa()
-                return
-
-            self.btn_generar.configure(
-                state="normal",
-                text="⚡  Generar todos los CVs",
-                fg_color=COLOR_PRIMARIO,
-                hover_color=COLOR_HOVER,
-            )
-            self._log_append("✅ Imágenes descargadas. Ya puedes generar los CVs.")
+            threading.Thread(
+                target=self._transformar_y_descargar,
+                args=(excel,),
+                daemon=True,
+            ).start()
             return
 
         fotos = self._ruta_fotos.get() or OUTPUT_IMAGENES
         excel_transformado = self._ruta_excel_transformado.get() or excel
 
         self.controller.procesar(excel_transformado, fotos)
+
+    def _transformar_y_descargar(self, excel: str):
+        """Transforma el Excel y descarga las fotos sin bloquear la interfaz."""
+        ok, msg, ruta_transformada = self.controller.transformar_excel(excel)
+        self.controller.callback_log(msg)
+        if not ok:
+            self.tab.after(0, self._finalizar_etapa)
+            return
+
+        self.tab.after(0, lambda: self._ruta_excel_transformado.set(ruta_transformada))
+        self.tab.after(0, lambda: self._ruta_fotos.set(OUTPUT_IMAGENES))
+        self.tab.after(0, lambda: setattr(self, "_modo_generacion", "generar"))
+
+        ok_descarga, msg_descarga = self.controller.descargar_fotos_excel(ruta_transformada)
+        if msg_descarga:
+            self.controller.callback_log(msg_descarga)
+        if not ok_descarga:
+            self.tab.after(0, self._finalizar_etapa)
+            return
+
+        self.tab.after(0, lambda: self.btn_generar.configure(
+            state="normal",
+            text="⚡  Generar todos los CVs",
+            fg_color=COLOR_PRIMARIO,
+            hover_color=COLOR_HOVER,
+        ))
+        self.controller.callback_log("✅ Imágenes descargadas. Ya puedes generar los CVs.")
 
     def _finalizar_etapa(self):
         """Reinicia el botón principal tras cada etapa."""
@@ -172,11 +182,12 @@ class TabMasivo:
 
     def _agregar_pendiente(self, datos: dict):
         """Agrega un docente sin foto al panel de pendientes."""
+        id_registro = datos.get("id", "Sin ID")
         nombre = datos.get("nombre", "Sin nombre")
         fila = len(self._filas_pendientes)
 
         lbl = ctk.CTkLabel(self.frame_pendientes,
-                           text=f"⚠️  {nombre}",
+                           text=f"⚠️  ID {id_registro} — {nombre}",
                            text_color=COLOR_ALERTA,
                            font=ctk.CTkFont(size=11))
         lbl.grid(row=fila, column=0, sticky="w", padx=(5, 10), pady=4)
@@ -209,7 +220,10 @@ class TabMasivo:
         
         if exito:
             lbl_ref, btn_ref, _ = self._filas_pendientes[fila_idx]
-            lbl_ref.configure(text=f"✅  {nombre}", text_color=COLOR_EXITO)
+            lbl_ref.configure(
+                text=f"✅  ID {datos.get('id', 'Sin ID')} — {nombre}",
+                text_color=COLOR_EXITO,
+            )
             btn_ref.configure(state="disabled", text="Generado",
                               fg_color="gray", hover_color="gray")
 
