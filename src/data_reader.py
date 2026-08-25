@@ -41,17 +41,17 @@ def _tokens_importantes(texto: str) -> list[str]:
     return tokens
 
 
-# Nombres de columnas esperados (ajustar si el Excel tiene nombres diferentes).
-# Cada valor puede ser un string o una tupla de alias de encabezado.
+# Encabezados actuales del Excel exportado por Google Forms.
+# Los alias anteriores se conservan para aceptar archivos ya descargados.
 COLUMNAS = {
     "id":          "ID",
     "nombre":      "Apellidos y Nombres",
-    "foto_drive": ("Foto", "Foto de Perfil (sólo JPG)"),  # Alias para reconocimiento de foto
-    "correo":      ("Correo Institucional", "Correo Institucional (no personal)"),
-    "escuela":     ("Escuela Profesional", "Escuela Profesional o area que pertenece"),
+    "foto_drive": ("Foto de Perfil (sólo JPG)", "Foto"),
+    "correo":      ("Correo Institucional (no personal)", "Correo Institucional"),
+    "escuela":     ("Escuela Profesional o area que pertenece", "Escuela Profesional"),
     "departamento":"Departamento Academico",
     "tipo_docente":"Tipo de docente",
-    "categoria":   ("Categoría / Clase", "Categoría (de corresponder)"),
+    "categoria":   ("Categoría (de corresponder)", "Categoría / Clase"),
     "clase_docente":"Clase de docente (de corresponder)",
     "formacion1":  "Formación Académica 1",
     "formacion2":  "Formación Académica 2",
