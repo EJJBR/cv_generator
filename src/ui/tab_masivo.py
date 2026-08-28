@@ -4,12 +4,13 @@ UI y lógica del tab de carga masiva.
 """
 
 import os
+import threading
 import tkinter as tk
 from tkinter import filedialog
 import customtkinter as ctk
 from ui.config import (
-    COLOR_PRIMARIO, COLOR_HOVER, COLOR_ALERTA, COLOR_EXITO, 
-    EXCEL_FILETYPES, IMAGE_FILETYPES, OUTPUT_DIR
+    COLOR_PRIMARIO, COLOR_HOVER, COLOR_ALERTA, COLOR_EXITO,
+    EXCEL_FILETYPES, IMAGE_FILETYPES, OUTPUT_DIR, OUTPUT_IMAGENES,
 )
 from controllers.masivo_controller import MasivoController
 from ui.utils import nombre_archivo_pdf
@@ -26,11 +27,13 @@ class TabMasivo:
         # Estado
         self._ruta_excel = tk.StringVar(value="")
         self._ruta_fotos = tk.StringVar(value="")
+        self._ruta_excel_transformado = tk.StringVar(value="")
         self._filas_pendientes = []
         self.btn_generar = None
         self.log = None
         self.frame_pendientes = None
         self.controller = None
+        self._modo_generacion = "transformar"
         
         self._build()
     
@@ -48,26 +51,16 @@ class TabMasivo:
                       command=self._buscar_excel).grid(
             row=0, column=2, padx=(0, 10), pady=(15, 5))
 
-        # Selección de fotos
-        ctk.CTkLabel(self.tab, text="Carpeta de fotos:",
-                     font=ctk.CTkFont(weight="bold")).grid(
-            row=1, column=0, sticky="w", padx=(10, 5), pady=(0, 5))
-        ctk.CTkEntry(self.tab, textvariable=self._ruta_fotos,
-                     state="readonly", width=480).grid(
-            row=1, column=1, sticky="ew", padx=(0, 5), pady=(0, 5))
-        ctk.CTkButton(self.tab, text="📂 Buscar", width=90,
-                      fg_color=COLOR_PRIMARIO, hover_color=COLOR_HOVER,
-                      command=self._buscar_fotos).grid(
-            row=1, column=2, padx=(0, 10), pady=(0, 5))
-
-        # Botón generar
+        # Botón principal de acción (transformar / descargar / generar)
         self.btn_generar = ctk.CTkButton(
-            self.tab, text="⚡  Generar todos los CVs",
-            fg_color=COLOR_PRIMARIO, hover_color=COLOR_HOVER,
+            self.tab, text="Transformar Excel",
+            fg_color="#111111", hover_color="#2C2C2C",
             font=ctk.CTkFont(size=13, weight="bold"),
             command=self._iniciar_generacion)
-        self.btn_generar.grid(row=2, column=0, columnspan=3,
+        self.btn_generar.grid(row=1, column=0, columnspan=3,
                               pady=(10, 5), padx=10, sticky="ew")
+
+        self._ruta_fotos.set(OUTPUT_IMAGENES)
 
         # Log
         ctk.CTkLabel(self.tab, text="Progreso:",
@@ -98,6 +91,13 @@ class TabMasivo:
             filetypes=EXCEL_FILETYPES)
         if ruta:
             self._ruta_excel.set(ruta)
+            self.btn_generar.configure(
+                text="Transformar Excel",
+                fg_color="#111111",
+                hover_color="#2C2C2C",
+                state="normal"
+            )
+            self._modo_generacion = "transformar"
 
     def _buscar_fotos(self):
         """Abre diálogo para seleccionar carpeta de fotos."""
@@ -113,15 +113,10 @@ class TabMasivo:
         self.log.configure(state="disabled")
 
     def _iniciar_generacion(self):
-        """Inicia la generación masiva."""
+        """Transforma el Excel, descarga las fotos y luego genera los CVs."""
         excel = self._ruta_excel.get()
-        fotos = self._ruta_fotos.get()
-
         if not excel:
             self._log_append("❌ Selecciona el archivo Excel primero.")
-            return
-        if not fotos:
-            self._log_append("❌ Selecciona la carpeta de fotos primero.")
             return
 
         self.btn_generar.configure(state="disabled", text="Procesando...")
@@ -129,21 +124,70 @@ class TabMasivo:
             w.destroy()
         self._filas_pendientes.clear()
 
-        self.controller = MasivoController(
-            callback_log=lambda t: self.tab.after(0, lambda: self._log_append(t)),
-            callback_agregar_pendiente=lambda d: self.tab.after(0, lambda: self._agregar_pendiente(d)),
-            callback_completar=lambda: self.tab.after(0, lambda: self.btn_generar.configure(
-                state="normal", text="⚡  Generar todos los CVs"))
+        if self.controller is None:
+            self.controller = MasivoController(
+                callback_log=lambda t: self.tab.after(0, lambda: self._log_append(t)),
+                callback_agregar_pendiente=lambda d: self.tab.after(0, lambda: self._agregar_pendiente(d)),
+                callback_completar=lambda: self.tab.after(0, lambda: self._finalizar_etapa())
+            )
+
+        if self._modo_generacion == "transformar" or not self._ruta_excel_transformado.get():
+            threading.Thread(
+                target=self._transformar_y_descargar,
+                args=(excel,),
+                daemon=True,
+            ).start()
+            return
+
+        fotos = self._ruta_fotos.get() or OUTPUT_IMAGENES
+        excel_transformado = self._ruta_excel_transformado.get() or excel
+
+        self.controller.procesar(excel_transformado, fotos)
+
+    def _transformar_y_descargar(self, excel: str):
+        """Transforma el Excel y descarga las fotos sin bloquear la interfaz."""
+        ok, msg, ruta_transformada = self.controller.transformar_excel(excel)
+        self.controller.callback_log(msg)
+        if not ok:
+            self.tab.after(0, self._finalizar_etapa)
+            return
+
+        self.tab.after(0, lambda: self._ruta_excel_transformado.set(ruta_transformada))
+        self.tab.after(0, lambda: self._ruta_fotos.set(OUTPUT_IMAGENES))
+        self.tab.after(0, lambda: setattr(self, "_modo_generacion", "generar"))
+
+        ok_descarga, msg_descarga = self.controller.descargar_fotos_excel(ruta_transformada)
+        if msg_descarga:
+            self.controller.callback_log(msg_descarga)
+        if not ok_descarga:
+            self.tab.after(0, self._finalizar_etapa)
+            return
+
+        self.tab.after(0, lambda: self.btn_generar.configure(
+            state="normal",
+            text="⚡  Generar todos los CVs",
+            fg_color=COLOR_PRIMARIO,
+            hover_color=COLOR_HOVER,
+        ))
+        self.controller.callback_log("✅ Imágenes descargadas. Ya puedes generar los CVs.")
+
+    def _finalizar_etapa(self):
+        """Reinicia el botón principal tras cada etapa."""
+        self.btn_generar.configure(
+            state="normal",
+            text="⚡  Generar todos los CVs" if self._modo_generacion == "generar" else "Transformar Excel",
+            fg_color=COLOR_PRIMARIO if self._modo_generacion == "generar" else "#111111",
+            hover_color=COLOR_HOVER if self._modo_generacion == "generar" else "#2C2C2C",
         )
-        self.controller.procesar(excel, fotos)
 
     def _agregar_pendiente(self, datos: dict):
         """Agrega un docente sin foto al panel de pendientes."""
+        id_registro = datos.get("id", "Sin ID")
         nombre = datos.get("nombre", "Sin nombre")
         fila = len(self._filas_pendientes)
 
         lbl = ctk.CTkLabel(self.frame_pendientes,
-                           text=f"⚠️  {nombre}",
+                           text=f"⚠️  ID {id_registro} — {nombre}",
                            text_color=COLOR_ALERTA,
                            font=ctk.CTkFont(size=11))
         lbl.grid(row=fila, column=0, sticky="w", padx=(5, 10), pady=4)
@@ -176,7 +220,10 @@ class TabMasivo:
         
         if exito:
             lbl_ref, btn_ref, _ = self._filas_pendientes[fila_idx]
-            lbl_ref.configure(text=f"✅  {nombre}", text_color=COLOR_EXITO)
+            lbl_ref.configure(
+                text=f"✅  ID {datos.get('id', 'Sin ID')} — {nombre}",
+                text_color=COLOR_EXITO,
+            )
             btn_ref.configure(state="disabled", text="Generado",
                               fg_color="gray", hover_color="gray")
 

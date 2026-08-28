@@ -37,4 +37,4 @@ datos = {
 os.makedirs("output", exist_ok=True)
 logo = os.path.join("assets", "logofdcp.png")
 ruta = generar_cv(datos, "output/CV_prueba_grande.pdf", logo_path=logo)
-print(f"✅ CV con datos expandidos generado con éxito en: {ruta}")
+print(f"[OK] CV con datos expandidos generado con exito en: {ruta}")

@@ -41,16 +41,17 @@ def _tokens_importantes(texto: str) -> list[str]:
     return tokens
 
 
-# Nombres de columnas esperados (ajustar si el Excel tiene nombres diferentes).
-# Cada valor puede ser un string o una tupla de alias de encabezado.
+# Encabezados actuales del Excel exportado por Google Forms.
+# Los alias anteriores se conservan para aceptar archivos ya descargados.
 COLUMNAS = {
+    "id":          "ID",
     "nombre":      "Apellidos y Nombres",
-    "foto_drive": ("Foto", "Foto de Perfil (sólo JPG)"),  # Alias para reconocimiento de foto
-    "correo":      ("Correo Institucional", "Correo Institucional (no personal)"),
-    "escuela":     ("Escuela Profesional", "Escuela Profesional o area que pertenece"),
+    "foto_drive": ("Foto de Perfil (sólo JPG)", "Foto"),
+    "correo":      ("Correo Institucional (no personal)", "Correo Institucional"),
+    "escuela":     ("Escuela Profesional o area que pertenece", "Escuela Profesional"),
     "departamento":"Departamento Academico",
     "tipo_docente":"Tipo de docente",
-    "categoria":   ("Categoría / Clase", "Categoría (de corresponder)"),
+    "categoria":   ("Categoría (de corresponder)", "Categoría / Clase"),
     "clase_docente":"Clase de docente (de corresponder)",
     "formacion1":  "Formación Académica 1",
     "formacion2":  "Formación Académica 2",
@@ -63,12 +64,30 @@ COLUMNAS = {
 }
 
 
-def _buscar_foto(nombre_docente: str, carpeta_fotos: str) -> str | None:
+def _buscar_foto(nombre_docente: str, carpeta_fotos: str, id_registro: str | None = None) -> str | None:
     """
     Busca la foto del docente en la carpeta de fotos.
-    Acepta nombres con mayúsculas, tildes, abreviaturas, prefijos y apellidos aislados.
+    Si existe un ID, prioriza buscar el archivo con ese prefijo para soportar
+    imágenes descargadas en formato ID_Apellido_Nombre.jpg. No usa el nombre
+    como alternativa cuando existe un ID, para evitar asignar la foto de otro docente.
+    Sin ID, acepta nombres con mayúsculas, tildes, abreviaturas y apellidos aislados.
     """
     if not os.path.exists(carpeta_fotos):
+        return None
+
+    id_registro = str(id_registro or "").strip()
+    if id_registro:
+        prefijo = f"{id_registro}_"
+        for archivo in os.listdir(carpeta_fotos):
+            ruta_archivo = os.path.join(carpeta_fotos, archivo)
+            if os.path.isdir(ruta_archivo):
+                continue
+            if archivo.startswith(prefijo):
+                return ruta_archivo
+            nombre_base, _ = os.path.splitext(archivo)
+            if nombre_base == str(id_registro):
+                return ruta_archivo
+
         return None
 
     nombre_docente = (nombre_docente or "").strip()
@@ -165,6 +184,7 @@ def leer_excel(ruta_excel: str, carpeta_fotos: str) -> tuple[list, list]:
             return ""
 
         datos = {
+            "id":           cel("id"),
             "nombre":       cel("nombre"),
             "correo":       cel("correo"),
             "escuela":      cel("escuela"),
@@ -188,7 +208,7 @@ def leer_excel(ruta_excel: str, carpeta_fotos: str) -> tuple[list, list]:
         }
 
         # buscar foto
-        foto = _buscar_foto(datos["nombre"], carpeta_fotos)
+        foto = _buscar_foto(datos["nombre"], carpeta_fotos, datos.get("id"))
         if foto:
             datos["foto_path"] = foto
             completos.append(datos)

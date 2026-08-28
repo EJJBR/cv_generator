@@ -4,11 +4,44 @@ Lógica para procesamiento masivo de CVs.
 """
 
 import os
+import re
 import threading
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from datetime import datetime
+from pathlib import Path
+
+import openpyxl
+import requests
+
 from data_reader import leer_excel
 from pdf_generator import generar_cv
-from ui.config import OUTPUT_DIR, LOGO_PATH
+from ui.config import OUTPUT_DIR, OUTPUT_IMAGENES, OUTPUT_LOGS, OUTPUT_REGISTROS, LOGO_PATH
 from ui.utils import nombre_archivo_pdf
+
+
+def _slug_nombre(nombre: str) -> str:
+    if not nombre:
+        return "sin_nombre"
+    nombre = str(nombre)
+    nombre = re.sub(r"[^a-zA-Z0-9]+", "_", nombre).strip("_")
+    return nombre or "sin_nombre"
+
+
+def _nombre_archivo_imagen(nombre: str) -> str:
+    """Conserva el nombre legible y elimina caracteres inválidos en Windows."""
+    nombre = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", str(nombre or ""))
+    nombre = " ".join(nombre.split())
+    return (nombre.strip(" .") or "SIN_NOMBRE").upper()
+
+
+def _max_workers() -> int:
+    """Limita la concurrencia a cuatro tareas y se adapta al equipo disponible."""
+    return max(1, min(4, os.cpu_count() or 1))
+
+
+def _generar_cv_en_proceso(datos: dict, ruta_pdf: str):
+    """Genera un CV aislado para que pueda ejecutarse en otro proceso."""
+    generar_cv(datos, ruta_pdf, logo_path=LOGO_PATH)
 
 
 class MasivoController:
@@ -23,6 +56,158 @@ class MasivoController:
         self.callback_log = callback_log
         self.callback_agregar_pendiente = callback_agregar_pendiente
         self.callback_completar = callback_completar
+
+    def transformar_excel(self, ruta_excel: str) -> tuple[bool, str, str]:
+        """Limpia el Excel, elimina filas vacías y agrega la columna ID."""
+        try:
+            ruta_excel = str(ruta_excel)
+            if not os.path.exists(ruta_excel):
+                return False, "❌ No existe el archivo Excel seleccionado.", ""
+
+            os.makedirs(OUTPUT_REGISTROS, exist_ok=True)
+            wb = openpyxl.load_workbook(ruta_excel, data_only=True)
+            ws = wb.active
+            filas = list(ws.iter_rows(values_only=True))
+            if not filas:
+                return False, "❌ El Excel está vacío.", ""
+
+            encabezados = [str(h).strip() if h is not None else "" for h in filas[0]]
+            registros = []
+            for fila in filas[1:]:
+                if not fila or not any((valor is not None and str(valor).strip() != "") for valor in fila):
+                    continue
+                registros.append(list(fila))
+
+            if not registros:
+                return False, "❌ No se encontraron registros útiles después de limpiar filas vacías.", ""
+
+            nombre_base = os.path.splitext(os.path.basename(ruta_excel))[0]
+            output_path = os.path.join(OUTPUT_REGISTROS, f"{nombre_base}_limpio.xlsx")
+
+            nueva_wb = openpyxl.Workbook()
+            nueva_ws = nueva_wb.active
+            nueva_ws.append(["ID"] + encabezados)
+
+            for idx, fila in enumerate(registros, start=1):
+                if len(fila) < len(encabezados):
+                    fila = list(fila) + [None] * (len(encabezados) - len(fila))
+                nueva_ws.append([idx] + fila)
+
+            nueva_wb.save(output_path)
+            return True, f"✅ Excel transformado en {output_path}", output_path
+        except Exception as exc:
+            return False, f"❌ Error al transformar Excel: {exc}", ""
+
+    def descargar_fotos_excel(self, ruta_excel: str) -> tuple[bool, str]:
+        """Descarga imágenes usando hasta cuatro hilos para tareas de red."""
+        try:
+            os.makedirs(OUTPUT_IMAGENES, exist_ok=True)
+            os.makedirs(OUTPUT_LOGS, exist_ok=True)
+
+            wb = openpyxl.load_workbook(ruta_excel, data_only=True)
+            filas = list(wb.active.iter_rows(values_only=True))
+            if not filas:
+                return False, "❌ El Excel transformado está vacío."
+
+            encabezados = [str(h).strip().lower() if h is not None else "" for h in filas[0]]
+            idx_id = encabezados.index("id") if "id" in encabezados else None
+            idx_nombre = encabezados.index("apellidos y nombres") if "apellidos y nombres" in encabezados else None
+            idx_foto = next(
+                (i for i, nombre in enumerate(encabezados)
+                 if "foto" in nombre and ("perfil" in nombre or "drive" in nombre or "jpg" in nombre)),
+                None,
+            )
+            if idx_id is None or idx_nombre is None or idx_foto is None:
+                return False, "❌ No se encontraron las columnas ID, Apellidos y Nombres o Foto de Perfil."
+
+            log_path = os.path.join(OUTPUT_LOGS, "descarga_fotos.log")
+            tareas = []
+            total = 0
+            faltantes = 0
+            errores = 0
+
+            for fila in filas[1:]:
+                if not fila or not any(valor is not None and str(valor).strip() != "" for valor in fila):
+                    continue
+                id_val = fila[idx_id] if idx_id < len(fila) else None
+                if id_val is None or str(id_val).strip() == "":
+                    continue
+
+                total += 1
+                foto_val = fila[idx_foto] if idx_foto < len(fila) else None
+                url = str(foto_val).strip() if foto_val is not None else ""
+                if not url or not any(dominio in url.lower() for dominio in (
+                    "drive.google.com", "docs.google.com", "googleusercontent"
+                )):
+                    faltantes += 1
+                    self._registrar_descarga(log_path, f"⚠️ ID {id_val}: falta link de Drive en la columna de foto.")
+                    continue
+
+                match = re.search(r"/d/([a-zA-Z0-9_-]+)", url) or re.search(r"[?&]id=([a-zA-Z0-9_-]+)", url)
+                if not match:
+                    errores += 1
+                    self._registrar_descarga(log_path, f"❌ ID {id_val}: no se pudo extraer el file_id del link de Drive.")
+                    continue
+
+                nombre = _nombre_archivo_imagen(fila[idx_nombre] if idx_nombre < len(fila) else "")
+                destino = os.path.join(OUTPUT_IMAGENES, f"{id_val}_{nombre}.jpg")
+                tareas.append((str(id_val), match.group(1), destino))
+
+            descargadas = 0
+            with ThreadPoolExecutor(max_workers=_max_workers()) as executor:
+                futuros = {
+                    executor.submit(self._descargar_foto, file_id, destino): (id_val, destino)
+                    for id_val, file_id, destino in tareas
+                }
+                for futuro in as_completed(futuros):
+                    id_val, destino = futuros[futuro]
+                    try:
+                        futuro.result()
+                        descargadas += 1
+                        self._registrar_descarga(
+                            log_path,
+                            f"✅ ID {id_val}: descargada -> {os.path.basename(destino)}",
+                        )
+                    except Exception as exc:
+                        errores += 1
+                        self._registrar_descarga(log_path, f"❌ ID {id_val}: error al descargar la foto -> {exc}")
+
+            resumen = (
+                f"\n==== RESUMEN ====\n"
+                f"Registros con ID: {total}\n"
+                f"Descargadas: {descargadas}\n"
+                f"Faltantes de link: {faltantes}\n"
+                f"Errores de descarga: {errores}\n"
+                f"Log: {log_path}\n"
+            )
+            self._registrar_descarga(log_path, resumen.rstrip())
+            return True, resumen
+        except Exception as exc:
+            return False, f"❌ Error intentando descargar imágenes: {exc}"
+
+    def _descargar_foto(self, file_id: str, destino: str):
+        """Descarga una imagen individual; se ejecuta dentro de un hilo."""
+        api_url = "https://docs.google.com/uc?export=download"
+        session = requests.Session()
+        response = session.get(api_url, params={"id": file_id}, stream=True, timeout=60)
+        token = next((value for key, value in response.cookies.items() if key.startswith("download_warning")), None)
+        if token:
+            response = session.get(api_url, params={"id": file_id, "confirm": token}, stream=True, timeout=60)
+        if response.status_code != 200:
+            raise RuntimeError(f"Google Drive respondió HTTP {response.status_code}")
+        if "image" not in response.headers.get("Content-Type", "").lower():
+            raise RuntimeError(f"La URL no devolvió una imagen válida: {response.headers.get('Content-Type')}")
+        with open(destino, "wb") as archivo:
+            for chunk in response.iter_content(32768):
+                if chunk:
+                    archivo.write(chunk)
+
+    def _registrar_descarga(self, log_path: str, mensaje: str):
+        """Escribe en archivo, consola y log visible de la interfaz."""
+        print(mensaje)
+        self.callback_log(mensaje)
+        with open(log_path, "a", encoding="utf-8") as archivo:
+            archivo.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {mensaje}\n")
 
     def procesar(self, ruta_excel: str, ruta_fotos: str):
         """Inicia procesamiento en thread separado."""
@@ -49,15 +234,26 @@ class MasivoController:
 
         os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-        # Generar CVs de los que sí tienen foto
-        for datos in completos:
-            nombre = datos.get("nombre", "sin_nombre")
-            try:
-                ruta_pdf = os.path.join(OUTPUT_DIR, nombre_archivo_pdf(nombre))
-                generar_cv(datos, ruta_pdf, logo_path=LOGO_PATH)
-                self.callback_log(f"✅ {nombre}")
-            except Exception as e:
-                self.callback_log(f"❌ {nombre} → {e}")
+        # Generar CVs de los que sí tienen foto en procesos separados.
+        max_workers = _max_workers()
+        self.callback_log(
+            f"⚙ Generando {len(completos)} CVs con hasta {max_workers} procesos..."
+        )
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            futuros = {}
+            for datos in completos:
+                nombre = datos.get("nombre", "sin_nombre")
+                ruta_pdf = os.path.join(OUTPUT_DIR, nombre_archivo_pdf(nombre, datos.get("id")))
+                futuro = executor.submit(_generar_cv_en_proceso, datos, ruta_pdf)
+                futuros[futuro] = nombre
+
+            for futuro in as_completed(futuros):
+                nombre = futuros[futuro]
+                try:
+                    futuro.result()
+                    self.callback_log(f"✅ {nombre}")
+                except Exception as e:
+                    self.callback_log(f"❌ {nombre} → {e}")
 
         # Agregar pendientes
         if sin_foto:
@@ -78,8 +274,8 @@ class MasivoController:
         nombre = datos.get("nombre", "sin_nombre")
         try:
             os.makedirs(OUTPUT_DIR, exist_ok=True)
-            ruta_pdf = os.path.join(OUTPUT_DIR, nombre_archivo_pdf(nombre))
+            ruta_pdf = os.path.join(OUTPUT_DIR, nombre_archivo_pdf(nombre, datos.get("id")))
             generar_cv(datos, ruta_pdf, logo_path=LOGO_PATH)
-            return True, f"✅ {nombre} → generado manualmente"
+            return True, f"✅ ID {datos.get('id', 'Sin ID')}: {nombre} → generado manualmente"
         except Exception as e:
-            return False, f"❌ {nombre} → {e}"
+            return False, f"❌ ID {datos.get('id', 'Sin ID')}: {nombre} → {e}"

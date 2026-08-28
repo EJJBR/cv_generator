@@ -17,6 +17,9 @@ SRC_DIR          = os.path.dirname(os.path.dirname(__file__))
 PROJECT_DIR      = os.path.dirname(SRC_DIR)
 LOGO_PATH        = os.path.join(PROJECT_DIR, "assets", "logofdcp.png")
 OUTPUT_DIR       = os.path.join(PROJECT_DIR, "output")
+OUTPUT_REGISTROS = os.path.join(OUTPUT_DIR, "registros")
+OUTPUT_IMAGENES  = os.path.join(OUTPUT_DIR, "imagenes")
+OUTPUT_LOGS      = os.path.join(OUTPUT_DIR, "logs")
 
 # ── Dimensiones de la ventana ────────────────────────────────────────────────
 WINDOW_WIDTH     = 800
