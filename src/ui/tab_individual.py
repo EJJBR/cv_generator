@@ -16,7 +16,11 @@ class TabIndividual:
     def __init__(self, tab_widget):
         """tab_widget: CTkTabview frame."""
         self.tab = tab_widget
-        self.tab.columnconfigure(1, weight=1)
+        self.tab.grid_rowconfigure(0, weight=1)
+        self.tab.grid_columnconfigure(0, weight=1)
+        self.contenido = ctk.CTkScrollableFrame(self.tab)
+        self.contenido.grid(row=0, column=0, sticky="nsew")
+        self.contenido.columnconfigure(1, weight=1)
         
         self._campos_ind = {}
         self._textos_ind = {}
@@ -32,14 +36,16 @@ class TabIndividual:
             ("correo",       "Correo Institucional"),
             ("escuela",      "Escuela Profesional"),
             ("departamento", "Departamento Académico"),
+            ("tipo_docente", "Tipo de docente"),
             ("categoria",    "Categoría / Clase"),
+            ("clase_docente", "Clase de docente"),
         ]
         
         for i, (key, label) in enumerate(campos):
-            ctk.CTkLabel(self.tab, text=label,
+            ctk.CTkLabel(self.contenido, text=label,
                          font=ctk.CTkFont(weight="bold")).grid(
                 row=i, column=0, sticky="w", padx=(10, 5), pady=(8, 0))
-            entry = ctk.CTkEntry(self.tab, width=460)
+            entry = ctk.CTkEntry(self.contenido, width=460)
             entry.grid(row=i, column=1, sticky="ew",
                        padx=(0, 10), pady=(8, 0))
             self._campos_ind[key] = entry
@@ -52,34 +58,34 @@ class TabIndividual:
         ]
         base = len(campos)
         for i, (key, label) in enumerate(textos):
-            ctk.CTkLabel(self.tab, text=label,
+            ctk.CTkLabel(self.contenido, text=label,
                          font=ctk.CTkFont(weight="bold")).grid(
                 row=base + i, column=0, sticky="nw",
                 padx=(10, 5), pady=(8, 0))
-            tb = ctk.CTkTextbox(self.tab, height=60, width=460)
+            tb = ctk.CTkTextbox(self.contenido, height=60, width=460)
             tb.grid(row=base + i, column=1, sticky="ew",
                     padx=(0, 10), pady=(8, 0))
             self._textos_ind[key] = tb
 
         # Foto
         fila_foto = base + len(textos)
-        ctk.CTkLabel(self.tab, text="Foto carné",
+        ctk.CTkLabel(self.contenido, text="Foto carné",
                      font=ctk.CTkFont(weight="bold")).grid(
             row=fila_foto, column=0, sticky="w",
             padx=(10, 5), pady=(8, 0))
 
-        ctk.CTkEntry(self.tab, textvariable=self._foto_ind,
+        ctk.CTkEntry(self.contenido, textvariable=self._foto_ind,
                      state="readonly", width=340).grid(
             row=fila_foto, column=1, sticky="w",
             padx=(0, 5), pady=(8, 0))
-        ctk.CTkButton(self.tab, text="📂", width=50,
+        ctk.CTkButton(self.contenido, text="📂", width=50,
                       fg_color=COLOR_PRIMARIO, hover_color=COLOR_HOVER,
                       command=self._buscar_foto_ind).grid(
             row=fila_foto, column=1, sticky="e",
             padx=(0, 10), pady=(8, 0))
 
         # Botón generar
-        ctk.CTkButton(self.tab,
+        ctk.CTkButton(self.contenido,
                       text="⚡  Generar CV",
                       fg_color=COLOR_PRIMARIO, hover_color=COLOR_HOVER,
                       font=ctk.CTkFont(size=13, weight="bold"),
@@ -102,7 +108,9 @@ class TabIndividual:
             "correo":       self._campos_ind["correo"].get().strip(),
             "escuela":      self._campos_ind["escuela"].get().strip(),
             "departamento": self._campos_ind["departamento"].get().strip(),
+            "tipo_docente": self._campos_ind["tipo_docente"].get().strip(),
             "categoria":    self._campos_ind["categoria"].get().strip(),
+            "clase_docente":self._campos_ind["clase_docente"].get().strip(),
             "formacion":    self._textos_ind["formacion"].get("1.0", "end").strip(),
             "trayectoria":  self._textos_ind["trayectoria"].get("1.0", "end").strip(),
             "experiencia":  self._textos_ind["experiencia"].get("1.0", "end").strip(),

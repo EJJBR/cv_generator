@@ -45,9 +45,9 @@ def _tokens_importantes(texto: str) -> list[str]:
 # Los alias anteriores se conservan para aceptar archivos ya descargados.
 COLUMNAS = {
     "id":          "ID",
-    "nombre":      "Apellidos y Nombres",
-    "foto_drive": ("Foto de Perfil (sólo JPG)", "Foto"),
-    "correo":      ("Correo Institucional (no personal)", "Correo Institucional"),
+    "nombre":      ("Apellidos y Nombres del docente", "Apellidos y Nombres"),
+    "foto_drive": ("Foto de Perfil (sólo JPG) colocar en el nombre del archivo los apellidos y nombres del docente", "Foto de Perfil (sólo JPG)", "Foto"),
+    "correo":      ("Correo Institucional del docente(no personal)", "Correo Institucional (no personal)", "Correo Institucional"),
     "escuela":     ("Escuela Profesional o area que pertenece", "Escuela Profesional"),
     "departamento":"Departamento Academico",
     "tipo_docente":"Tipo de docente",

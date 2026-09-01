@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Generador de CVs Docentes</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="masthead">
+      <div>
+        <p class="eyebrow">FDCP · UNMSM</p>
+        <h1>Generador de CVs docentes</h1>
+        <p class="subtitle">Prepara perfiles profesionales con una salida limpia y lista para entregar.</p>
+      </div>
+      <div class="status"><span></span> Aplicación local</div>
+    </header>
+
+    {% if mensaje %}<div class="notice success">{{ mensaje }}</div>{% endif %}
+    {% if error %}<div class="notice error">{{ error }}</div>{% endif %}
+
+    <nav class="tabs" aria-label="Modos de generación">
+      <button class="tab active" data-panel="individual">Individual</button>
+      <button class="tab" data-panel="masivo">Carga masiva</button>
+    </nav>
+
+    <section id="individual" class="panel active">
+      <div class="panel-heading">
+        <div><p class="eyebrow">Un perfil</p><h2>Generación individual</h2></div>
+        <span class="step">01</span>
+      </div>
+      <form action="/individual" method="post" enctype="multipart/form-data">
+        <div class="form-grid">
+          <label class="wide">Apellidos y Nombres *<input name="nombre" required placeholder="Ej. Quispe Mamani Juan Carlos"></label>
+          <label>Correo institucional<input type="email" name="correo"></label>
+          <label>Escuela profesional<input name="escuela"></label>
+          <label>Departamento académico<input name="departamento"></label>
+          <label>Tipo de docente<input name="tipo_docente" placeholder="Ej. Ordinario"></label>
+          <label>Categoría / Clase<input name="categoria" placeholder="Ej. Auxiliar"></label>
+          <label>Clase de docente<input name="clase_docente" placeholder="Ej. Tiempo Completo"></label>
+          <label class="wide">Foto carné<input type="file" name="foto" accept="image/*"></label>
+          <label class="wide">Formación académica <span>Una entrada por línea</span><textarea name="formacion" rows="4"></textarea></label>
+          <label class="wide">Trayectoria<textarea name="trayectoria" rows="4"></textarea></label>
+          <label class="wide">Experiencia laboral <span>Una entrada por línea</span><textarea name="experiencia" rows="4"></textarea></label>
+        </div>
+        <button class="primary" type="submit">Generar CV <b>→</b></button>
+      </form>
+    </section>
+
+    <section id="masivo" class="panel">
+      <div class="panel-heading"><div><p class="eyebrow">Varios perfiles</p><h2>Carga masiva</h2></div><span class="step">02</span></div>
+      <div class="coming"><strong>Esta vista será la siguiente etapa.</strong><p>Conservará la descarga paralela de imágenes y la generación paralela de PDFs que ya funcionan en el controlador actual.</p></div>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

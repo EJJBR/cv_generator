@@ -72,4 +72,4 @@ def sanitizar_para_reportlab(texto: str) -> str:
     """
     if not texto:
         return ""
-    return escape(texto, quote=True)
+    return escape(texto, quote=False)

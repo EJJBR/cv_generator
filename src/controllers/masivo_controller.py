@@ -111,7 +111,11 @@ class MasivoController:
 
             encabezados = [str(h).strip().lower() if h is not None else "" for h in filas[0]]
             idx_id = encabezados.index("id") if "id" in encabezados else None
-            idx_nombre = encabezados.index("apellidos y nombres") if "apellidos y nombres" in encabezados else None
+            idx_nombre = next(
+                (i for i, nombre in enumerate(encabezados)
+                 if nombre in ("apellidos y nombres del docente", "apellidos y nombres")),
+                None,
+            )
             idx_foto = next(
                 (i for i, nombre in enumerate(encabezados)
                  if "foto" in nombre and ("perfil" in nombre or "drive" in nombre or "jpg" in nombre)),

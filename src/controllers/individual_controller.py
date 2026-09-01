@@ -25,7 +25,7 @@ class IndividualController:
 
         try:
             os.makedirs(OUTPUT_DIR, exist_ok=True)
-            ruta_pdf = os.path.join(OUTPUT_DIR, nombre_archivo_pdf(nombre))
+            ruta_pdf = os.path.join(OUTPUT_DIR, nombre_archivo_pdf(nombre, datos.get("id")))
             generar_cv(datos, ruta_pdf, logo_path=LOGO_PATH)
             return True, ruta_pdf
         except Exception as e:

@@ -35,7 +35,8 @@ class App(ctk.CTk):
         # Obtener posición centrada según el SO
         x, y, _, _ = obtener_posicion_ventana_centrada()
         self.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}+{x}+{y}")
-        self.resizable(False, False)
+        self.resizable(True, True)
+        self.minsize(700, 520)
         self.configure(fg_color=COLOR_FONDO)
         
         self._build_ui()
