@@ -109,12 +109,20 @@ class MasivoController:
             if not filas:
                 return False, "❌ El Excel transformado está vacío."
 
-            encabezados = [str(h).strip().lower() if h is not None else "" for h in filas[0]]
-            idx_id = encabezados.index("id") if "id" in encabezados else None
-            idx_nombre = encabezados.index("apellidos y nombres") if "apellidos y nombres" in encabezados else None
+            encabezados = [str(h).strip() if h is not None else "" for h in filas[0]]
+            encabezados_norm = [re.sub(r"[^a-z0-9]+", " ", str(h).lower().strip()) for h in encabezados]
+
+            idx_id = next((i for i, nombre in enumerate(encabezados_norm) if nombre in {"id", "identificacion", "numero de identificacion", "numero de identificacion"} or "id" in nombre), None)
+            idx_nombre = next(
+                (i for i, nombre in enumerate(encabezados_norm)
+                 if nombre in {"apellidos y nombres", "nombre completo", "apellidos", "nombres", "nombre", "apellidos y nombres del docente"}
+                 or "apellidos" in nombre and "nombres" in nombre
+                 or "nombre" in nombre and "docente" in nombre),
+                None,
+            )
             idx_foto = next(
-                (i for i, nombre in enumerate(encabezados)
-                 if "foto" in nombre and ("perfil" in nombre or "drive" in nombre or "jpg" in nombre)),
+                (i for i, nombre in enumerate(encabezados_norm)
+                 if "foto" in nombre and ("perfil" in nombre or "drive" in nombre or "jpg" in nombre or "link" in nombre or "docente" in nombre)),
                 None,
             )
             if idx_id is None or idx_nombre is None or idx_foto is None:
@@ -149,7 +157,25 @@ class MasivoController:
                     self._registrar_descarga(log_path, f"❌ ID {id_val}: no se pudo extraer el file_id del link de Drive.")
                     continue
 
-                nombre = _nombre_archivo_imagen(fila[idx_nombre] if idx_nombre < len(fila) else "")
+                nombre_base = fila[idx_nombre] if idx_nombre < len(fila) else ""
+                if isinstance(nombre_base, str):
+                    nombre = nombre_base
+                else:
+                    nombre = str(nombre_base or "")
+
+                if encabezados_norm[idx_nombre] in {"apellidos", "nombres"}:
+                    nombre_comp = []
+                    for j, col in enumerate(encabezados_norm):
+                        if j == idx_nombre:
+                            continue
+                        if col in {"apellidos", "nombres", "nombre completo", "apellidos y nombres", "nombre"}:
+                            valor = fila[j] if j < len(fila) else ""
+                            if valor is not None and str(valor).strip() != "":
+                                nombre_comp.append(str(valor).strip())
+                    if nombre_comp:
+                        nombre = " ".join(nombre_comp)
+
+                nombre = _nombre_archivo_imagen(nombre)
                 destino = os.path.join(OUTPUT_IMAGENES, f"{id_val}_{nombre}.jpg")
                 tareas.append((str(id_val), match.group(1), destino))
 
