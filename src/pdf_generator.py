@@ -6,6 +6,13 @@ Fondo gestionado por callback de página para evitar errores de desbordamiento (
 
 import os
 import io
+import sys
+
+# Asegurar que el directorio de src esté siempre en sys.path para procesos secundarios (multiprocessing)
+src_dir = os.path.dirname(os.path.abspath(__file__))
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
+
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.utils import ImageReader
@@ -13,6 +20,15 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from PIL import Image as PILImage
 from ui.utils import sanitizar_para_reportlab
+
+try:
+    from image_processor import recortar_rostro_y_hombros
+except ImportError:
+    try:
+        from src.image_processor import recortar_rostro_y_hombros
+    except ImportError as exc:
+        print(f"[WARN] Error cargando image_processor: {exc}")
+        recortar_rostro_y_hombros = None
 
 # ── Paleta de Colores (Armonía Guinda Institucional) ────────────────────
 GUINDA_FACULTAD = colors.HexColor("#4B0002")
@@ -74,12 +90,15 @@ class FotoCircularFlowable(Flowable):
         cx, cy = self.radio, self.radio
         try:
             if self.foto_path and os.path.exists(self.foto_path):
-                img = PILImage.open(self.foto_path).convert("RGB")
-                lado = min(img.size)
-                left = (img.size[0] - lado) // 2
-                top = (img.size[1] - lado) // 2
-                img = img.crop((left, top, left + lado, top + lado))
-                img = img.resize((300, 300), PILImage.LANCZOS)
+                if recortar_rostro_y_hombros:
+                    img = recortar_rostro_y_hombros(self.foto_path, target_size=(300, 300))
+                else:
+                    img = PILImage.open(self.foto_path).convert("RGB")
+                    lado = min(img.size)
+                    left = (img.size[0] - lado) // 2
+                    top = (img.size[1] - lado) // 2
+                    img = img.crop((left, top, left + lado, top + lado))
+                    img = img.resize((300, 300), PILImage.LANCZOS)
 
                 buf = io.BytesIO()
                 img.save(buf, format="JPEG", quality=90)
