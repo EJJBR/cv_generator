@@ -100,6 +100,11 @@ class MasivoController:
 
     def descargar_fotos_excel(self, ruta_excel: str) -> tuple[bool, str]:
         """Descarga imágenes usando hasta cuatro hilos para tareas de red."""
+        ok, resumen, _ = self.descargar_fotos_excel_detallado(ruta_excel)
+        return ok, resumen
+
+    def descargar_fotos_excel_detallado(self, ruta_excel: str) -> tuple[bool, str, list[dict]]:
+        """Descarga imágenes y retorna el estado por cada fila para la interfaz."""
         try:
             os.makedirs(OUTPUT_IMAGENES, exist_ok=True)
             os.makedirs(OUTPUT_LOGS, exist_ok=True)
@@ -107,7 +112,7 @@ class MasivoController:
             wb = openpyxl.load_workbook(ruta_excel, data_only=True)
             filas = list(wb.active.iter_rows(values_only=True))
             if not filas:
-                return False, "❌ El Excel transformado está vacío."
+                return False, "❌ El Excel transformado está vacío.", []
 
             encabezados = [str(h).strip() if h is not None else "" for h in filas[0]]
             encabezados_norm = [re.sub(r"[^a-z0-9]+", " ", str(h).lower().strip()) for h in encabezados]
@@ -127,13 +132,14 @@ class MasivoController:
                 None,
             )
             if idx_id is None or idx_nombre is None or idx_foto is None:
-                return False, "❌ No se encontraron las columnas ID, Apellidos y Nombres o Foto de Perfil."
+                return False, "❌ No se encontraron las columnas ID, Apellidos y Nombres o Foto de Perfil.", []
 
             log_path = os.path.join(OUTPUT_LOGS, "descarga_fotos.log")
             tareas = []
             total = 0
             faltantes = 0
             errores = 0
+            detalle = []
 
             for fila in filas[1:]:
                 if not fila or not any(valor is not None and str(valor).strip() != "" for valor in fila):
@@ -145,19 +151,6 @@ class MasivoController:
                 total += 1
                 foto_val = fila[idx_foto] if idx_foto < len(fila) else None
                 url = str(foto_val).strip() if foto_val is not None else ""
-                if not url or not any(dominio in url.lower() for dominio in (
-                    "drive.google.com", "docs.google.com", "googleusercontent"
-                )):
-                    faltantes += 1
-                    self._registrar_descarga(log_path, f"⚠️ ID {id_val}: falta link de Drive en la columna de foto.")
-                    continue
-
-                match = re.search(r"/d/([a-zA-Z0-9_-]+)", url) or re.search(r"[?&]id=([a-zA-Z0-9_-]+)", url)
-                if not match:
-                    errores += 1
-                    self._registrar_descarga(log_path, f"❌ ID {id_val}: no se pudo extraer el file_id del link de Drive.")
-                    continue
-
                 nombre_base = fila[idx_nombre] if idx_nombre < len(fila) else ""
                 if isinstance(nombre_base, str):
                     nombre = nombre_base
@@ -176,41 +169,87 @@ class MasivoController:
                     if nombre_comp:
                         nombre = " ".join(nombre_comp)
 
-                nombre = _nombre_archivo_imagen(nombre)
-                destino = os.path.join(OUTPUT_IMAGENES, f"{id_val}_{nombre}.jpg")
-                tareas.append((str(id_val), match.group(1), destino))
+                item = {
+                    "id": str(id_val).strip(),
+                    "nombre": nombre.strip() or "Sin nombre",
+                    "tiene_enlace": bool(url),
+                    "descargada": False,
+                    "fallida": False,
+                    "can_retry": False,
+                    "progreso": 0,
+                    "estado": "Sin enlace",
+                    "ruta_foto": "",
+                }
 
-            descargadas = 0
+                if not url or not any(dominio in url.lower() for dominio in (
+                    "drive.google.com", "docs.google.com", "googleusercontent"
+                )):
+                    faltantes += 1
+                    item["estado"] = "Sin enlace"
+                    item["tiene_enlace"] = False
+                    item["progreso"] = 0
+                    detalle.append(item)
+                    self._registrar_descarga(log_path, f"⚠️ ID {id_val}: falta link de Drive en la columna de foto.")
+                    continue
+
+                match = re.search(r"/d/([a-zA-Z0-9_-]+)", url) or re.search(r"[?&]id=([a-zA-Z0-9_-]+)", url)
+                if not match:
+                    errores += 1
+                    item["estado"] = "Error al extraer enlace"
+                    item["fallida"] = True
+                    item["can_retry"] = True
+                    detalle.append(item)
+                    self._registrar_descarga(log_path, f"❌ ID {id_val}: no se pudo extraer el file_id del link de Drive.")
+                    continue
+
+                item["estado"] = "Descargando"
+                item["progreso"] = 40
+                item["tiene_enlace"] = True
+                nombre_archivo = _nombre_archivo_imagen(nombre)
+                destino = os.path.join(OUTPUT_IMAGENES, f"{id_val}_{nombre_archivo}.jpg")
+                item["ruta_foto"] = destino
+                tareas.append((str(id_val), match.group(1), destino, item))
+                detalle.append(item)
+
             with ThreadPoolExecutor(max_workers=_max_workers()) as executor:
                 futuros = {
-                    executor.submit(self._descargar_foto, file_id, destino): (id_val, destino)
-                    for id_val, file_id, destino in tareas
+                    executor.submit(self._descargar_foto, file_id, destino): (id_val, destino, item)
+                    for id_val, file_id, destino, item in tareas
                 }
                 for futuro in as_completed(futuros):
-                    id_val, destino = futuros[futuro]
+                    id_val, destino, item = futuros[futuro]
                     try:
                         futuro.result()
-                        descargadas += 1
+                        item["estado"] = "Descargada"
+                        item["descargada"] = True
+                        item["tiene_enlace"] = True
+                        item["progreso"] = 100
+                        item["fallida"] = False
+                        item["can_retry"] = False
                         self._registrar_descarga(
                             log_path,
                             f"✅ ID {id_val}: descargada -> {os.path.basename(destino)}",
                         )
                     except Exception as exc:
                         errores += 1
+                        item["estado"] = "Error al descargar"
+                        item["fallida"] = True
+                        item["can_retry"] = True
+                        item["progreso"] = 0
                         self._registrar_descarga(log_path, f"❌ ID {id_val}: error al descargar la foto -> {exc}")
 
             resumen = (
                 f"\n==== RESUMEN ====\n"
                 f"Registros con ID: {total}\n"
-                f"Descargadas: {descargadas}\n"
+                f"Descargadas: {sum(1 for fila in detalle if fila.get('descargada'))}\n"
                 f"Faltantes de link: {faltantes}\n"
                 f"Errores de descarga: {errores}\n"
                 f"Log: {log_path}\n"
             )
             self._registrar_descarga(log_path, resumen.rstrip())
-            return True, resumen
+            return True, resumen, detalle
         except Exception as exc:
-            return False, f"❌ Error intentando descargar imágenes: {exc}"
+            return False, f"❌ Error intentando descargar imágenes: {exc}", []
 
     def _descargar_foto(self, file_id: str, destino: str):
         """Descarga una imagen individual; se ejecuta dentro de un hilo."""

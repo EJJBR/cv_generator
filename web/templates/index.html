@@ -7,12 +7,21 @@
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
+  <header class="topbar">
+    <div class="brand-lockup">
+      <img src="/assets/logofdcp_head.png" alt="Identidad de la UNMSM">
+      <div>
+        <strong>Universidad Nacional Mayor de San Marcos</strong>
+        <span>Mesa de Trámites · Facultad de Derecho y Ciencia Política</span>
+      </div>
+    </div>
+  </header>
   <main class="shell">
     <header class="masthead">
       <div>
-        <p class="eyebrow">FDCP · UNMSM</p>
-        <h1>Generador de CVs docentes</h1>
-        <p class="subtitle">Prepara perfiles profesionales con una salida limpia y lista para entregar.</p>
+        <p class="eyebrow">Generación documental · 2 opciones</p>
+        <h1>¿Qué documento necesitas generar?</h1>
+        <p class="subtitle">Selecciona el modo correspondiente y prepara un CV docente listo para presentar.</p>
       </div>
       <div class="status"><span></span> Aplicación local</div>
     </header>
@@ -50,7 +59,41 @@
 
     <section id="masivo" class="panel">
       <div class="panel-heading"><div><p class="eyebrow">Varios perfiles</p><h2>Carga masiva</h2></div><span class="step">02</span></div>
-      <div class="coming"><strong>Esta vista será la siguiente etapa.</strong><p>Conservará la descarga paralela de imágenes y la generación paralela de PDFs que ya funcionan en el controlador actual.</p></div>
+
+      <div class="mass-toolbar">
+        <label class="file-picker">Archivo Excel
+          <span class="file-field"><span id="excel-file-name">Selecciona el Excel de docentes</span><input id="excel-input" type="file" accept=".xlsx,.xls"></span>
+        </label>
+        <button id="process-excel" class="primary compact" type="button">Procesar Excel <b>→</b></button>
+      </div>
+
+      <div class="mass-summary" aria-label="Resumen de carga">
+        <div><strong id="total-docentes">0</strong><span>docentes detectados</span></div>
+        <div><strong id="total-enlaces">0</strong><span>enlaces disponibles</span></div>
+        <div><strong id="total-pendientes">0</strong><span>sin enlace</span></div>
+      </div>
+
+      <div id="download-log" class="download-log" aria-live="polite">
+        <strong>Estado:</strong> Esperando archivo Excel.
+      </div>
+
+      <div class="mass-filter">
+        <label for="docente-search">Buscar docente</label>
+        <input id="docente-search" type="search" placeholder="Escribe un ID o nombre..." autocomplete="off">
+      </div>
+
+      <div class="mass-table-wrap">
+        <table class="mass-table">
+          <thead><tr><th>ID</th><th>Docente</th><th>Descarga de imagen</th><th>CV</th></tr></thead>
+          <tbody id="docente-rows"><tr><td colspan="4" class="empty-table">Procesa un Excel para cargar docentes.</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="mass-actions">
+        <button class="secondary" type="button">Elegir carpeta de destino</button>
+        <button class="primary compact" type="button">Guardar CVs <b>↓</b></button>
+        <button class="finish" type="button">Finalizar y limpiar</button>
+      </div>
     </section>
   </main>
   <script src="/static/app.js"></script>
