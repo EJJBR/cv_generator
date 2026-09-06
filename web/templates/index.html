@@ -83,10 +83,36 @@
       </div>
 
       <div class="mass-table-wrap">
+        <div class="download-progress" aria-live="polite">
+          <div class="download-progress-heading">
+            <strong id="download-progress-label">Progreso de descarga</strong>
+            <span id="download-progress-count">0 de 0</span>
+          </div>
+          <div class="download-progress-track" role="progressbar" aria-label="Progreso de descarga" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <span id="download-progress-bar"></span>
+          </div>
+        </div>
         <table class="mass-table">
           <thead><tr><th>ID</th><th>Docente</th><th>Descarga de imagen</th><th>CV</th></tr></thead>
           <tbody id="docente-rows"><tr><td colspan="4" class="empty-table">Procesa un Excel para cargar docentes.</td></tr></tbody>
         </table>
+        <div id="docente-pagination" class="table-pagination" aria-label="Paginación de docentes" hidden>
+          <span id="pagination-summary"></span>
+          <div class="pagination-controls">
+            <button id="pagination-prev" type="button" aria-label="Página anterior">←</button>
+            <span id="pagination-page"></span>
+            <button id="pagination-next" type="button" aria-label="Página siguiente">→</button>
+          </div>
+          <label for="page-size">Mostrar
+            <select id="page-size">
+              <option value="10">10</option>
+              <option value="15">15</option>
+              <option value="20" selected>20</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+            </select>
+          </label>
+        </div>
       </div>
 
       <div class="mass-actions">

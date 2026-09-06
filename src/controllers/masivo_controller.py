@@ -5,6 +5,7 @@ Lógica para procesamiento masivo de CVs.
 
 import os
 import re
+import tempfile
 import threading
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -12,6 +13,7 @@ from pathlib import Path
 
 import openpyxl
 import requests
+from PIL import Image
 
 from data_reader import leer_excel
 from pdf_generator import generar_cv
@@ -37,6 +39,20 @@ def _nombre_archivo_imagen(nombre: str) -> str:
 def _max_workers() -> int:
     """Limita la concurrencia a cuatro tareas y se adapta al equipo disponible."""
     return max(1, min(4, os.cpu_count() or 1))
+
+
+def _ruta_imagen(id_val: str, nombre: str) -> str:
+    nombre_archivo = _nombre_archivo_imagen(nombre)
+    return os.path.join(OUTPUT_IMAGENES, f"{id_val}_{nombre_archivo}.jpg")
+
+
+def _imagen_valida(ruta: str) -> bool:
+    try:
+        with Image.open(ruta) as imagen:
+            imagen.load()
+        return True
+    except (OSError, ValueError):
+        return False
 
 
 def _generar_cv_en_proceso(datos: dict, ruta_pdf: str):
@@ -103,7 +119,12 @@ class MasivoController:
         ok, resumen, _ = self.descargar_fotos_excel_detallado(ruta_excel)
         return ok, resumen
 
-    def descargar_fotos_excel_detallado(self, ruta_excel: str) -> tuple[bool, str, list[dict]]:
+    def descargar_fotos_excel_detallado(
+        self,
+        ruta_excel: str,
+        callback_estado=None,
+        solo_ids: set[str] | None = None,
+    ) -> tuple[bool, str, list[dict]]:
         """Descarga imágenes y retorna el estado por cada fila para la interfaz."""
         try:
             os.makedirs(OUTPUT_IMAGENES, exist_ok=True)
@@ -148,7 +169,9 @@ class MasivoController:
                 if id_val is None or str(id_val).strip() == "":
                     continue
 
-                total += 1
+                id_texto = str(id_val).strip()
+                if solo_ids is None or id_texto in solo_ids:
+                    total += 1
                 foto_val = fila[idx_foto] if idx_foto < len(fila) else None
                 url = str(foto_val).strip() if foto_val is not None else ""
                 nombre_base = fila[idx_nombre] if idx_nombre < len(fila) else ""
@@ -181,6 +204,17 @@ class MasivoController:
                     "ruta_foto": "",
                 }
 
+                if solo_ids is not None and id_texto not in solo_ids:
+                    item["ruta_foto"] = _ruta_imagen(id_texto, nombre)
+                    if os.path.isfile(item["ruta_foto"]) and _imagen_valida(item["ruta_foto"]):
+                        item["descargada"] = True
+                        item["estado"] = "Descargada"
+                        item["progreso"] = 100
+                    else:
+                        item["estado"] = "No reintentada"
+                    detalle.append(item)
+                    continue
+
                 if not url or not any(dominio in url.lower() for dominio in (
                     "drive.google.com", "docs.google.com", "googleusercontent"
                 )):
@@ -189,6 +223,8 @@ class MasivoController:
                     item["tiene_enlace"] = False
                     item["progreso"] = 0
                     detalle.append(item)
+                    if callback_estado:
+                        callback_estado(item)
                     self._registrar_descarga(log_path, f"⚠️ ID {id_val}: falta link de Drive en la columna de foto.")
                     continue
 
@@ -199,17 +235,20 @@ class MasivoController:
                     item["fallida"] = True
                     item["can_retry"] = True
                     detalle.append(item)
+                    if callback_estado:
+                        callback_estado(item)
                     self._registrar_descarga(log_path, f"❌ ID {id_val}: no se pudo extraer el file_id del link de Drive.")
                     continue
 
                 item["estado"] = "Descargando"
                 item["progreso"] = 40
                 item["tiene_enlace"] = True
-                nombre_archivo = _nombre_archivo_imagen(nombre)
-                destino = os.path.join(OUTPUT_IMAGENES, f"{id_val}_{nombre_archivo}.jpg")
+                destino = _ruta_imagen(str(id_val).strip(), nombre)
                 item["ruta_foto"] = destino
                 tareas.append((str(id_val), match.group(1), destino, item))
                 detalle.append(item)
+                if callback_estado:
+                    callback_estado(item)
 
             with ThreadPoolExecutor(max_workers=_max_workers()) as executor:
                 futuros = {
@@ -226,6 +265,8 @@ class MasivoController:
                         item["progreso"] = 100
                         item["fallida"] = False
                         item["can_retry"] = False
+                        if callback_estado:
+                            callback_estado(item)
                         self._registrar_descarga(
                             log_path,
                             f"✅ ID {id_val}: descargada -> {os.path.basename(destino)}",
@@ -236,12 +277,17 @@ class MasivoController:
                         item["fallida"] = True
                         item["can_retry"] = True
                         item["progreso"] = 0
+                        if callback_estado:
+                            callback_estado(item)
                         self._registrar_descarga(log_path, f"❌ ID {id_val}: error al descargar la foto -> {exc}")
 
+            filas_resumen = detalle if solo_ids is None else [
+                fila for fila in detalle if fila.get("id") in solo_ids
+            ]
             resumen = (
                 f"\n==== RESUMEN ====\n"
                 f"Registros con ID: {total}\n"
-                f"Descargadas: {sum(1 for fila in detalle if fila.get('descargada'))}\n"
+                f"Descargadas: {sum(1 for fila in filas_resumen if fila.get('descargada'))}\n"
                 f"Faltantes de link: {faltantes}\n"
                 f"Errores de descarga: {errores}\n"
                 f"Log: {log_path}\n"
@@ -263,10 +309,22 @@ class MasivoController:
             raise RuntimeError(f"Google Drive respondió HTTP {response.status_code}")
         if "image" not in response.headers.get("Content-Type", "").lower():
             raise RuntimeError(f"La URL no devolvió una imagen válida: {response.headers.get('Content-Type')}")
-        with open(destino, "wb") as archivo:
-            for chunk in response.iter_content(32768):
-                if chunk:
-                    archivo.write(chunk)
+        destino = Path(destino)
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        temporal = tempfile.NamedTemporaryFile(
+            mode="wb", delete=False, dir=destino.parent, suffix=".part"
+        )
+        temporal_path = Path(temporal.name)
+        try:
+            with temporal:
+                for chunk in response.iter_content(32768):
+                    if chunk:
+                        temporal.write(chunk)
+            if not _imagen_valida(str(temporal_path)):
+                raise RuntimeError("La imagen descargada está incompleta o dañada")
+            os.replace(temporal_path, destino)
+        finally:
+            temporal_path.unlink(missing_ok=True)
 
     def _registrar_descarga(self, log_path: str, mensaje: str):
         """Escribe en archivo, consola y log visible de la interfaz."""
