@@ -185,5 +185,5 @@ La carpeta `output/` contiene los resultados locales:
 - `output/*.pdf`: CVs generados.
 
 ## 👥 Equipo
-- Edgardo Barboza — Desarrollo / integración
-- Maximo Roman — Google Forms
+- Edgardo Barboza — Desarrollo / Integración
+- Maximo Roman — Google Forms / Reconocimeinto facial por Open CV
