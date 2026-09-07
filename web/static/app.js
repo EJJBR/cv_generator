@@ -27,6 +27,36 @@ let paginaActual = 1;
 let vistaPreviaActual = null;
 let outputFolderHandle = null;
 
+async function restaurarSesionMasiva() {
+  try {
+    const response = await fetch('/masivo/estado-inicial');
+    const result = await response.json();
+    if (!response.ok || !result.hay_salidas) return;
+    const fecha = result.excel_modificado
+      ? new Date(result.excel_modificado * 1000).toLocaleString()
+      : 'sin fecha';
+    const conservar = confirm(
+      `Hay resultados anteriores: ${result.imagenes} imágenes, ${result.cvs} CVs y Excel limpio más reciente (${fecha}).\n\n` +
+      '¿Quieres conservarlos y cargarlos en la tabla? Pulsa Cancelar para limpiarlos.'
+    );
+    if (!conservar) {
+      const limpieza = await fetch('/masivo/limpiar', {method: 'POST'});
+      if (!limpieza.ok) throw new Error('No se pudieron limpiar los resultados anteriores.');
+      return;
+    }
+    todasLasFilas = result.filas || [];
+    renderDocentes(todasLasFilas);
+    processExcel.dataset.stage = result.cvs ? 'done' : result.imagenes ? 'generate' : 'download';
+    processExcel.innerHTML = result.cvs
+      ? 'CVs generados <b>✓</b>'
+      : result.imagenes ? 'Generar CVs <b>→</b>' : 'Descargar imágenes <b>→</b>';
+  } catch (error) {
+    console.error('No se pudo restaurar la sesión masiva:', error);
+  }
+}
+
+restaurarSesionMasiva();
+
 tabs.forEach((tab) => {
   tab.addEventListener('click', () => {
     tabs.forEach((item) => item.classList.remove('active'));
@@ -147,17 +177,17 @@ clearMassiveOutput?.addEventListener('click', async () => {
 
 processExcel?.addEventListener('click', async () => {
   const file = excelInput?.files?.[0];
-  if (!file) {
+  const stage = processExcel.dataset.stage || 'process';
+  if (!file && (stage === 'process' || !todasLasFilas.length)) {
     alert('Selecciona un archivo Excel primero.');
     return;
   }
 
-  const stage = processExcel.dataset.stage || 'process';
   const isProcessing = processExcel.dataset.loading === 'true';
-  if (isProcessing) return;
+  if (isProcessing || stage === 'done') return;
 
   const formData = new FormData();
-  formData.append('excel', file);
+  if (file) formData.append('excel', file);
   processExcel.disabled = true;
   processExcel.dataset.loading = 'true';
   processExcel.innerHTML = stage === 'process'
@@ -496,12 +526,12 @@ function attachRetryHandlers() {
   docenteRowsContainer.querySelectorAll('.generate-cv-action').forEach((button) => {
     button.addEventListener('click', async () => {
       const file = excelInput?.files?.[0];
-      if (!file) {
+      if (!file && !todasLasFilas.length) {
         alert('Selecciona un archivo Excel primero.');
         return;
       }
       const formData = new FormData();
-      formData.append('excel', file);
+      if (file) formData.append('excel', file);
       formData.append('id_val', button.dataset.id || '');
       button.disabled = true;
       button.textContent = 'Generando...';
@@ -535,13 +565,13 @@ function attachRetryHandlers() {
   docenteRowsContainer.querySelectorAll('.retry-action').forEach((button) => {
     button.addEventListener('click', async () => {
       const file = excelInput?.files?.[0];
-      if (!file) {
+      if (!file && !todasLasFilas.length) {
         alert('Selecciona un archivo Excel primero.');
         return;
       }
 
       const formData = new FormData();
-      formData.append('excel', file);
+      if (file) formData.append('excel', file);
       const idReintento = button.dataset.id || '';
       formData.append('id_reintento', idReintento);
       button.disabled = true;

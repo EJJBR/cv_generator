@@ -1,5 +1,6 @@
 import os
 import re
+import hashlib
 import sys
 import tempfile
 import threading
@@ -33,6 +34,9 @@ download_tasks = {}
 download_tasks_lock = Lock()
 generation_tasks = {}
 generation_tasks_lock = Lock()
+active_excel_path = None
+active_excel_signature = None
+active_excel_lock = Lock()
 
 
 def _crear_masivo_controller():
@@ -45,6 +49,48 @@ def _ruta_cv(id_val: str, nombre: str) -> Path:
 
 def _id_valido(id_val: str) -> bool:
     return bool(id_val and re.fullmatch(r"[A-Za-z0-9_-]+", id_val))
+
+
+async def _excel_transformado(excel: UploadFile | None, controller: MasivoController):
+    """Reutiliza el Excel limpio durante la sesión para no crear duplicados."""
+    global active_excel_path, active_excel_signature
+    if excel is None:
+        with active_excel_lock:
+            if active_excel_path and Path(active_excel_path).is_file():
+                return True, "", active_excel_path
+        return False, "Selecciona un archivo Excel primero.", ""
+    contenido = await excel.read()
+    firma = hashlib.sha256(contenido).hexdigest()
+    with active_excel_lock:
+        if (
+            active_excel_path
+            and active_excel_signature == firma
+            and Path(active_excel_path).is_file()
+        ):
+            return True, "", active_excel_path
+
+    suffix = Path(excel.filename or "").suffix.lower()
+    temporal = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as archivo:
+            archivo.write(contenido)
+            temporal = archivo.name
+        ok, mensaje, ruta_transformada = controller.transformar_excel(temporal)
+        if ok:
+            with active_excel_lock:
+                active_excel_path = ruta_transformada
+                active_excel_signature = firma
+        return ok, mensaje, ruta_transformada
+    finally:
+        if temporal:
+            Path(temporal).unlink(missing_ok=True)
+
+
+def _salidas_existentes():
+    imagenes = [ruta for ruta in Path(OUTPUT_IMAGENES).glob("*") if ruta.is_file()]
+    cvs = list(Path(OUTPUT_DIR).glob("*.pdf"))
+    excels = list(Path(OUTPUT_REGISTROS).glob("*.xlsx")) + list(Path(OUTPUT_REGISTROS).glob("*.xls"))
+    return imagenes, cvs, excels
 
 
 def _filas_excel(ruta_excel: str, incluir_cv: bool = False):
@@ -96,6 +142,29 @@ def index(request: Request, mensaje: str = "", error: str = ""):
         name="index.html",
         context={"mensaje": mensaje, "error": error},
     )
+
+
+@app.get("/masivo/estado-inicial")
+def estado_inicial_masivo():
+    global active_excel_path, active_excel_signature
+    imagenes, cvs, excels = _salidas_existentes()
+    if not imagenes and not cvs and not excels:
+        return {"hay_salidas": False}
+
+    excel_reciente = max(excels, key=lambda ruta: ruta.stat().st_mtime) if excels else None
+    filas = _filas_excel(str(excel_reciente), incluir_cv=True) if excel_reciente else []
+    if excel_reciente:
+        with active_excel_lock:
+            active_excel_path = str(excel_reciente)
+            active_excel_signature = None
+    return {
+        "hay_salidas": True,
+        "imagenes": len(imagenes),
+        "cvs": len(cvs),
+        "excel": excel_reciente.name if excel_reciente else "",
+        "excel_modificado": excel_reciente.stat().st_mtime if excel_reciente else None,
+        "filas": filas,
+    }
 
 
 @app.post("/individual", response_class=HTMLResponse)
@@ -156,17 +225,13 @@ async def procesar_masivo(excel: UploadFile = File(...)):
     if not excel.filename:
         return JSONResponse({"error": "Selecciona un archivo Excel."}, status_code=400)
 
-    suffix = Path(excel.filename).suffix.lower()
-    if suffix not in {".xlsx", ".xls"}:
+    suffix = Path(excel.filename or "").suffix.lower() if excel else ""
+    if excel and suffix not in {".xlsx", ".xls"}:
         return JSONResponse({"error": "El archivo debe ser Excel (.xlsx o .xls)."}, status_code=400)
 
-    temporal = None
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as archivo:
-            archivo.write(await excel.read())
-            temporal = archivo.name
-
-        ok, mensaje, ruta_transformada = _crear_masivo_controller().transformar_excel(temporal)
+        controller = _crear_masivo_controller()
+        ok, mensaje, ruta_transformada = await _excel_transformado(excel, controller)
         if not ok:
             return JSONResponse({"error": mensaje}, status_code=400)
 
@@ -177,30 +242,24 @@ async def procesar_masivo(excel: UploadFile = File(...)):
     except Exception as exc:
         return JSONResponse({"error": f"Error procesando Excel: {exc}"}, status_code=500)
     finally:
-        if temporal:
-            Path(temporal).unlink(missing_ok=True)
+        pass
 
 
 @app.post("/masivo/descargar")
 async def descargar_imagenes(
-    excel: UploadFile = File(...),
+    excel: UploadFile | None = File(None),
     id_reintento: str | None = Form(None),
 ):
-    if not excel.filename:
-        return JSONResponse({"error": "Selecciona un archivo Excel."}, status_code=400)
+    if excel is None and not active_excel_path:
+        return JSONResponse({"error": "Selecciona un archivo Excel primero."}, status_code=400)
 
-    suffix = Path(excel.filename).suffix.lower()
-    if suffix not in {".xlsx", ".xls"}:
+    suffix = Path(excel.filename or "").suffix.lower() if excel else ""
+    if excel and suffix not in {".xlsx", ".xls"}:
         return JSONResponse({"error": "El archivo debe ser Excel (.xlsx o .xls)."}, status_code=400)
 
-    temporal = None
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as archivo:
-            archivo.write(await excel.read())
-            temporal = archivo.name
-
         controller = _crear_masivo_controller()
-        ok, mensaje, ruta_transformada = controller.transformar_excel(temporal)
+        ok, mensaje, ruta_transformada = await _excel_transformado(excel, controller)
         if not ok:
             return JSONResponse({"error": mensaje}, status_code=400)
 
@@ -249,27 +308,21 @@ async def descargar_imagenes(
     except Exception as exc:
         return JSONResponse({"error": f"Error descargando imágenes: {exc}"}, status_code=500)
     finally:
-        if temporal:
-            Path(temporal).unlink(missing_ok=True)
+        pass
 
 
 @app.post("/masivo/generar")
-async def generar_cvs_masivo(excel: UploadFile = File(...)):
-    if not excel.filename:
-        return JSONResponse({"error": "Selecciona un archivo Excel."}, status_code=400)
+async def generar_cvs_masivo(excel: UploadFile | None = File(None)):
+    if excel is None and not active_excel_path:
+        return JSONResponse({"error": "Selecciona un archivo Excel primero."}, status_code=400)
 
-    suffix = Path(excel.filename).suffix.lower()
-    if suffix not in {".xlsx", ".xls"}:
+    suffix = Path(excel.filename or "").suffix.lower() if excel else ""
+    if excel and suffix not in {".xlsx", ".xls"}:
         return JSONResponse({"error": "El archivo debe ser Excel (.xlsx o .xls)."}, status_code=400)
 
-    temporal = None
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as archivo:
-            archivo.write(await excel.read())
-            temporal = archivo.name
-
         controller = _crear_masivo_controller()
-        ok, mensaje, ruta_transformada = controller.transformar_excel(temporal)
+        ok, mensaje, ruta_transformada = await _excel_transformado(excel, controller)
         if not ok:
             return JSONResponse({"error": mensaje}, status_code=400)
 
@@ -326,8 +379,7 @@ async def generar_cvs_masivo(excel: UploadFile = File(...)):
     except Exception as exc:
         return JSONResponse({"error": f"Error generando CVs: {exc}"}, status_code=500)
     finally:
-        if temporal:
-            Path(temporal).unlink(missing_ok=True)
+        pass
 
 
 @app.post("/masivo/imagen-local")
@@ -372,7 +424,7 @@ async def guardar_imagen_local(
 
 @app.post("/masivo/generar-cv")
 async def generar_cv_individual(
-    excel: UploadFile = File(...),
+    excel: UploadFile | None = File(None),
     id_val: str = Form(...),
 ):
     if not _id_valido(id_val):
@@ -380,13 +432,8 @@ async def generar_cv_individual(
 
     temporal = None
     try:
-        suffix = Path(excel.filename or "").suffix.lower()
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix or ".xlsx") as archivo:
-            archivo.write(await excel.read())
-            temporal = archivo.name
-
         controller = _crear_masivo_controller()
-        ok, mensaje, ruta_transformada = controller.transformar_excel(temporal)
+        ok, mensaje, ruta_transformada = await _excel_transformado(excel, controller)
         if not ok:
             return JSONResponse({"error": mensaje}, status_code=400)
 
@@ -450,6 +497,7 @@ def ver_cv(id_val: str):
 
 @app.post("/masivo/limpiar")
 def limpiar_salida_masiva():
+    global active_excel_path, active_excel_signature
     eliminados = 0
     for carpeta, patrones in (
         (Path(OUTPUT_IMAGENES), ("*",)),
@@ -462,6 +510,9 @@ def limpiar_salida_masiva():
                 if ruta.is_file():
                     ruta.unlink()
                     eliminados += 1
+    with active_excel_lock:
+        active_excel_path = None
+        active_excel_signature = None
     return {"mensaje": f"Limpieza terminada: {eliminados} archivos eliminados."}
 
 
