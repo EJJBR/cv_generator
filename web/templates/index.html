@@ -80,6 +80,12 @@
       <div class="mass-filter">
         <label for="docente-search">Buscar docente</label>
         <input id="docente-search" type="search" placeholder="Escribe un ID o nombre..." autocomplete="off">
+        <label for="status-filter">Filtrar</label>
+        <select id="status-filter">
+          <option value="all">Todos</option>
+          <option value="missing-link">Sin enlace</option>
+          <option value="failed">Reintentar</option>
+        </select>
       </div>
 
       <div class="mass-table-wrap">
@@ -116,12 +122,22 @@
       </div>
 
       <div class="mass-actions">
-        <button class="secondary" type="button">Elegir carpeta de destino</button>
-        <button class="primary compact" type="button">Guardar CVs <b>↓</b></button>
-        <button class="finish" type="button">Finalizar y limpiar</button>
+        <button id="choose-output-folder" class="secondary" type="button">Elegir carpeta de destino</button>
+        <button id="save-cvs" class="primary compact" type="button">Guardar CVs <b>↓</b></button>
+        <button id="clear-massive-output" class="finish" type="button">Finalizar y limpiar</button>
       </div>
     </section>
   </main>
+  <div id="image-modal" class="image-modal" role="dialog" aria-modal="true" aria-labelledby="image-modal-title" hidden>
+    <div class="image-modal-panel">
+      <button id="image-modal-close" class="image-modal-close" type="button" aria-label="Cerrar vista previa">×</button>
+      <p id="image-modal-title" class="image-modal-title"></p>
+      <button id="preview-prev" class="preview-arrow preview-prev" type="button" aria-label="Registro anterior">↑</button>
+      <img id="image-modal-image" src="" alt="Vista previa de la foto del docente">
+      <iframe id="image-modal-pdf" title="Vista previa del CV" hidden></iframe>
+      <button id="preview-next" class="preview-arrow preview-next" type="button" aria-label="Registro siguiente">↓</button>
+    </div>
+  </div>
   <script src="/static/app.js"></script>
 </body>
 </html>

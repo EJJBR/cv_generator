@@ -341,7 +341,7 @@ class MasivoController:
             daemon=True
         ).start()
 
-    def _procesar_interno(self, ruta_excel: str, ruta_fotos: str):
+    def _procesar_interno(self, ruta_excel: str, ruta_fotos: str, callback_cv=None):
         """Lógica interna de procesamiento."""
         try:
             completos, sin_foto = leer_excel(ruta_excel, ruta_fotos)
@@ -369,15 +369,38 @@ class MasivoController:
                 nombre = datos.get("nombre", "sin_nombre")
                 ruta_pdf = os.path.join(OUTPUT_DIR, nombre_archivo_pdf(nombre, datos.get("id")))
                 futuro = executor.submit(_generar_cv_en_proceso, datos, ruta_pdf)
-                futuros[futuro] = nombre
+                futuros[futuro] = (datos, nombre)
 
             for futuro in as_completed(futuros):
-                nombre = futuros[futuro]
+                datos, nombre = futuros[futuro]
                 try:
                     futuro.result()
                     self.callback_log(f"✅ {nombre}")
+                    if callback_cv:
+                        callback_cv({
+                            "id": str(datos.get("id", "")),
+                            "cv_generado": True,
+                            "cv_error": False,
+                            "cv_mensaje": "",
+                        })
                 except Exception as e:
                     self.callback_log(f"❌ {nombre} → {e}")
+                    if callback_cv:
+                        callback_cv({
+                            "id": str(datos.get("id", "")),
+                            "cv_generado": False,
+                            "cv_error": True,
+                            "cv_mensaje": "Contenido demasiado extenso o incompatible para generar el CV.",
+                        })
+
+            if callback_cv:
+                for datos in sin_foto:
+                    callback_cv({
+                        "id": str(datos.get("id", "")),
+                        "cv_generado": False,
+                        "cv_error": True,
+                        "cv_mensaje": "No se encontró una imagen para generar el CV.",
+                    })
 
         # Agregar pendientes
         if sin_foto:
