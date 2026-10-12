@@ -1,10 +1,17 @@
 """
 pdf_generator.py
+<<<<<<< Updated upstream
 Genera el CV en PDF utilizando Platypus (ReportLab).
 Fondo gestionado por callback de página para evitar errores de desbordamiento (LayoutError).
+=======
+Módulo adaptador para mantener retrocompatibilidad con la aplicación de escritorio.
+Delega la generación de PDFs al motor puro desacoplado en core/pdf_engine.py.
+>>>>>>> Stashed changes
 """
 
+import sys
 import os
+<<<<<<< Updated upstream
 import io
 import sys
 
@@ -42,8 +49,16 @@ ANCHO_COL_IZQ = W * 0.35
 ANCHO_COL_DER = W * 0.65
 PADDING_DER = 24
 ANCHO_LINEA = ANCHO_COL_DER - (PADDING_DER * 2)
+=======
 
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+>>>>>>> Stashed changes
 
+from core.pdf_engine import generar_declaracion_jurada, generar_informe_actividades
+
+<<<<<<< Updated upstream
 # ── Callbacks de Fondo (Evita usar rowHeights=[H] que rompe el layout) ───────
 def dibujar_fondos_cv(canvas, doc):
     """Dibuja las dos columnas de color directamente en la lona base."""
@@ -245,3 +260,6 @@ def generar_cv(datos: dict, ruta_salida: str, logo_path: str = None) -> str:
     # Compilamos inyectando el fondo a través del parámetro onFirstPage
     doc.build([grid_principal], onFirstPage=dibujar_fondos_cv)
     return ruta_salida
+=======
+__all__ = ["generar_declaracion_jurada", "generar_informe_actividades"]
+>>>>>>> Stashed changes

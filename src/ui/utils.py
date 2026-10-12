@@ -4,10 +4,16 @@ Utilidades para UI: centrado de ventana, nombres de archivo, sanitización, etc.
 """
 
 import sys
+import os
 import subprocess
 import re
-from html import escape
 from ui.config import WINDOW_WIDTH, WINDOW_HEIGHT
+
+# Re-exportar función pura desde core para retrocompatibilidad
+sys_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if sys_root not in sys.path:
+    sys.path.insert(0, sys_root)
+from core.utils import sanitizar_para_reportlab
 
 
 def obtener_posicion_ventana_centrada():

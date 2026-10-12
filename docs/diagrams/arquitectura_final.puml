@@ -1,0 +1,90 @@
+@startuml
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 13
+skinparam roundCorner 10
+skinparam monochrome false
+skinparam shadowing true
+
+skinparam package {
+    BackgroundColor #FAFAFA
+    BorderColor #4B0002
+    FontSize 14
+    FontStyle bold
+}
+
+skinparam queue {
+    BackgroundColor #E1F5FE
+    BorderColor #0277BD
+    FontSize 13
+}
+
+skinparam component {
+    BackgroundColor #FFFFFF
+    BorderColor #4B0002
+    FontSize 13
+}
+
+skinparam database {
+    BackgroundColor #FFF9C4
+    BorderColor #F57F17
+}
+
+title <size:18><b>ARQUITECTURA FINAL DEL PROCESO CRÍTICO - SISTEMA BOLSISTAS UNMSM</b></size>\n<size:14>Flujo de Estados: [Borrador] ➔ [Documentos_Generados] ➔ [Pendiente_Jefe]</size>
+
+actor "Bolsista / Cliente" as User #FFFFFF
+
+package "Capa de Presentación & Clientes" {
+    [App de Escritorio\n(CustomTkinter)] as DesktopApp
+    [Swagger UI / Frontend\n(/docs)] as SwaggerClient
+}
+
+package "Cloud PaaS: API REST (FastAPI)" as APIService {
+    [POST /api/expedientes] as ApiCreate
+    [GET /api/expedientes/{id}] as ApiGet
+    [PATCH .../completar] as ApiComplete
+    [POST .../enviar] as ApiSend
+    [GET /health] as ApiHealth
+    database "Persistencia\n(expedientes.json)" as DB
+}
+
+package "Middleware de Mensajería" as MiddlewarePkg {
+    queue "RabbitMQ / CloudAMQP\nCola: expedientes.generar_documentos" as RMQ
+}
+
+package "Microservicio Autónomo (DocsService)" as MicroservicePkg {
+    [Worker Consumidor\n(worker.py)] as Worker
+    [Motor ReportLab\n(core/pdf_engine.py)] as ReportLabEngine
+    database "Almacenamiento\n(/output/*.pdf)" as Storage
+}
+
+package "Serverless FaaS (AWS Lambda)" as ServerlessPkg {
+    [AWS Lambda Function\n(notificar_jefe/lambda_function.py)\nModo DRY_RUN / SMTP] as LambdaFunc
+}
+
+actor "Jefe de Dependencia\n(Revisor UNMSM)" as Boss #FFFFFF
+
+' ── Flujo de Estados y Conexiones ──────────────────────────────────────────
+
+User --> DesktopApp : 1. Ingresa datos del mes
+User --> SwaggerClient : 1. Alternativa REST
+
+DesktopApp --> ApiCreate : POST /api/expedientes
+SwaggerClient --> ApiCreate : POST /api/expedientes
+
+ApiCreate --> DB : Registra Estado:\n[1. Borrador]
+ApiCreate -down-> RMQ : (Reto 1: Middleware)\nPublica evento asíncrono
+
+RMQ -right-> Worker : Consume mensaje\n(ACK al terminar)
+Worker --> ReportLabEngine : Genera Declaración Jurada\ne Informe de Actividades
+ReportLabEngine --> Storage : Guarda PDFs generados
+
+Worker -up-> ApiComplete : (Reto 4: Microservicio Callback)\nPATCH /api/expedientes/{id}/completar
+ApiComplete --> DB : Actualiza Estado a:\n[2. Documentos_Generados]
+
+User --> ApiSend : 2. Revisa y aprueba envío\nPOST /api/expedientes/{id}/enviar
+ApiSend --> DB : Valida docs y pasa a:\n[3. Pendiente_Jefe]
+
+ApiSend -right-> LambdaFunc : (Reto 5: Serverless FaaS)\nDispara evento de notificación
+LambdaFunc -right-> Boss : Envía correo formal\n(o log simulado en DRY_RUN)
+
+@enduml

@@ -1,0 +1,52 @@
+@startuml
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 14
+skinparam roundCorner 10
+skinparam monochrome false
+skinparam shadowing true
+
+skinparam rectangle {
+    BackgroundColor #F8F9FA
+    BorderColor #4B0002
+    BorderThickness 1.5
+    FontSize 13
+}
+
+skinparam arrow {
+    Color #4B0002
+    Thickness 1.5
+}
+
+title <size:18><b>EVOLUCIÓN ARQUITECTÓNICA - SISTEMA BOLSISTAS UNMSM</b></size>\n<size:13>Transición del Monolito de Escritorio a una Arquitectura Distribuida Híbrida</size>
+
+rectangle "<b>ETAPA 0: MONOLITO BASE</b>\n<i>(App de Escritorio)</i>" as E0 #FFF3E0 {
+    [CustomTkinter GUI] --> [Motor ReportLab / OpenCV]
+}
+
+rectangle "<b>ETAPA 1: + MIDDLEWARE (+4 pts)</b>\n<i>(RabbitMQ / CloudAMQP)</i>" as E1 #E1F5FE {
+    [Cola AMQP Durable\nexpedientes.generar_documentos] as Queue1
+}
+
+rectangle "<b>ETAPA 2: + API REST (+4 pts)</b>\n<i>(FastAPI)</i>" as E2 #E8F5E9 {
+    [API FastAPI\nSwagger en /docs] as Api2
+}
+
+rectangle "<b>ETAPA 3: + CLOUD PaaS (+4 pts)</b>\n<i>(Render Web Service)</i>" as E3 #EDE7F6 {
+    [Nube PaaS Render\nHealthcheck /health] as Cloud3
+}
+
+rectangle "<b>ETAPA 4: + MICROSERVICIO (+4 pts)</b>\n<i>(DocsService Worker)</i>" as E4 #FCE4EC {
+    [Worker Independiente\nReportLab Desacoplado] as Worker4
+}
+
+rectangle "<b>ETAPA 5: + SERVERLESS FaaS (+4 pts)</b>\n<i>(AWS Lambda)</i>" as E5 #FFF8E1 {
+    [Función Lambda / DRY_RUN\nNotificación al Jefe] as Lambda5
+}
+
+E0 -right-> E1 : 1. Introducción de Broker
+E1 -down-> E2 : 2. Exposición vía API REST
+E2 -right-> E3 : 3. Despliegue en la Nube
+E3 -down-> E4 : 4. Segregación de Microservicio
+E4 -left-> E5 : 5. Notificación Serverless
+
+@enduml

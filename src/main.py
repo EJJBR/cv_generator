@@ -7,8 +7,11 @@ import os
 import sys
 import customtkinter as ctk
 
-# Agregar src/ al path para importaciones relativas
+# Agregar src/ y raíz del proyecto al path para importaciones relativas y módulos core
 sys.path.insert(0, os.path.dirname(__file__))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 from ui.config import (
     COLOR_PRIMARIO, COLOR_HOVER, COLOR_FONDO, 

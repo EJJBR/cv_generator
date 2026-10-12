@@ -5,3 +5,5 @@ __pycache__/
 output/
 *.egg-info/
 .env
+user_profile.json
+expedientes.json

@@ -1,0 +1,26 @@
+{
+  "ap_paterno": "PÉREZ",
+  "ap_materno": "QUISPE",
+  "nombres": "JUAN CARLOS",
+  "dni": "71234567",
+  "domicilio": "Av. Germán Amézaga 375, Ciudad Universitaria",
+  "distrito": "Cercado de Lima",
+  "telefono": "987654321",
+  "email": "juan.perez@unmsm.edu.pe",
+  "facultad": "Facultad de Ingeniería de Sistemas e Informática",
+  "condicion": "Estudiante",
+  "fecha": "Lima, 30 de Octubre del 2026",
+  "fecha_inicio": "01 de Octubre",
+  "anio": "2026",
+  "mes": "Octubre",
+  "de_nombre": "JUAN CARLOS PÉREZ QUISPE",
+  "para_nombre": "DR. CARLOS SÁNCHEZ VELÁSQUEZ",
+  "para_cargo": "Director de la Escuela Profesional de Ingeniería de Software",
+  "asunto": "Informe de actividades de bolsista - Octubre 2026",
+  "actividades": [
+    "Mantenimiento preventivo y correctivo de estaciones de trabajo en laboratorios FISI.",
+    "Configuración y despliegue de entornos de prueba para cátedras de arquitectura de software.",
+    "Desarrollo de scripts de automatización para consolidación de reportes de asistencia.",
+    "Soporte técnico a docentes y estudiantes en plataformas institucionales."
+  ]
+}

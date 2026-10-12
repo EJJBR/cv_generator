@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  # ── 1. RETO 1: MIDDLEWARE (RabbitMQ con Panel de Gestión Web) ─────────────
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: pagobolsista_rabbitmq
+    ports:
+      - "5672:5672"     # Puerto protocolo AMQP
+      - "15672:15672"   # Panel de Gestión Web (http://localhost:15672)
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── 2. RETO 2: API REST (FastAPI + Swagger UI) ────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    container_name: pagobolsista_api
+    ports:
+      - "8000:8000"     # Swagger UI: http://localhost:8000/docs
+    environment:
+      - ENV=docker
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=guest
+      - RABBITMQ_PASSWORD=guest
+      - DB_FILE=/app/output/expedientes.json
+      - DRY_RUN=true
+    volumes:
+      - ./output:/app/output
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── 3. RETO 4: MICROSERVICIO (DocsService - ReportLab Worker) ─────────────
+  docs_service:
+    build:
+      context: .
+      dockerfile: services/docs_service/Dockerfile
+    container_name: pagobolsista_docs_service
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=guest
+      - RABBITMQ_PASSWORD=guest
+      - API_URL=http://api:8000
+      - OUTPUT_DIR=/app/output
+    volumes:
+      - ./output:/app/output
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      api:
+        condition: service_started
+    restart: unless-stopped
